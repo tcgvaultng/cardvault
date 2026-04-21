@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b0618">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CardVault">
+<meta name="mobile-web-app-capable" content="yes">
+<title>CardVault — TCG Collection Manager</title>
+
+<link rel="manifest" href='data:application/manifest+json,{"name":"CardVault","short_name":"CardVault","start_url":".","scope":".","display":"standalone","orientation":"portrait","background_color":"%230b0618","theme_color":"%230b0618","icons":[{"src":"data:image/svg%2Bxml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2232%22 fill=%22%230b0618%22/%3E%3Crect x=%2248%22 y=%2236%22 width=%2296%22 height=%22128%22 rx=%2212%22 fill=%22%23c9a04b%22/%3E%3Crect x=%2258%22 y=%2246%22 width=%2276%22 height=%22108%22 rx=%228%22 fill=%22%230b0618%22/%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any maskable"}]}'>
+
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="%230b0618"/><rect x="16" y="12" width="32" height="42" rx="5" fill="%23c9a04b"/><rect x="20" y="16" width="24" height="34" rx="3" fill="%230b0618"/></svg>'>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#0b0618;--bg-2:#150a2e;--surface:#1a0e36;--surface-2:#261750;--panel:#140a2a;
+  --gold:#c9a04b;--gold-2:#e6c06b;--violet:#7b3ed8;--violet-2:#a066ff;--blue:#4b7bd8;
+  --green:#4bc984;--red:#e05a5a;--text:#f2e9ff;--text-dim:#b8a9d4;--text-mute:#7e6d9e;
+  --border:rgba(201,160,75,.22);--shadow:0 6px 18px rgba(0,0,0,.45);
+  --radius:14px;--radius-sm:8px;--radius-lg:20px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Exo 2',system-ui,sans-serif;font-size:15px;line-height:1.45;overflow-x:hidden}
+body{background:radial-gradient(1200px 600px at 10% -10%,rgba(123,62,216,.18),transparent 60%),radial-gradient(1000px 500px at 110% 10%,rgba(201,160,75,.12),transparent 55%),linear-gradient(180deg,#0b0618 0%,#0a0420 100%);min-height:100vh;min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+h1,h2,h3,h4{font-family:'Cinzel',serif;font-weight:700;letter-spacing:.02em;margin:0}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:none;background:none}
+input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;outline:none;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+label{display:block;font-size:.82em;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+
+#app{max-width:560px;margin:0 auto;padding-top:env(safe-area-inset-top);min-height:100vh;min-height:100dvh;position:relative}
+
+.topbar{position:sticky;top:0;z-index:30;background:rgba(11,6,24,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.topbar .brand{display:flex;align-items:center;gap:10px}
+.topbar h1{font-size:18px;background:linear-gradient(135deg,var(--gold-2),var(--violet-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.topbar .logo{font-size:22px}
+.user-chip{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px 10px 4px 4px;cursor:pointer}
+.user-chip .av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gold),var(--violet));font-size:14px;color:#fff}
+.user-chip .nm{font-size:13px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;background:rgba(11,6,24,.95);backdrop-filter:blur(14px);border-top:1px solid var(--border);display:flex;justify-content:space-around;padding:8px 0 calc(8px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+.tabbar button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;color:var(--text-mute);font-size:11px;border-radius:10px;min-width:58px}
+.tabbar button .ic{font-size:20px;line-height:1}
+.tabbar button.active{color:var(--gold);background:rgba(201,160,75,.08)}
+
+main{padding:16px 16px 110px}
+.view{display:none;animation:fade .25s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.panel{background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);margin-bottom:12px}
+.panel-title{font-family:'Cinzel',serif;font-size:15px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.muted{color:var(--text-dim);font-size:.9em}
+.hint{color:var(--text-mute);font-size:.82em;margin-top:6px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border-radius:var(--radius-sm);font-weight:600;letter-spacing:.02em;transition:transform .08s,filter .15s;min-height:42px;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#231300}
+.btn-violet{background:linear-gradient(135deg,var(--violet),var(--violet-2));color:#fff}
+.btn-ghost{background:var(--panel);color:var(--text);border:1px solid var(--border)}
+.btn-danger{background:rgba(224,90,90,.12);color:var(--red);border:1px solid rgba(224,90,90,.3)}
+.btn-block{width:100%}
+.btn-sm{padding:6px 10px;min-height:30px;font-size:13px}
+
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.field{margin-bottom:12px}
+
+.coll-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.coll-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;cursor:pointer;overflow:hidden;min-height:120px;display:flex;flex-direction:column;justify-content:space-between}
+.coll-card::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--cc,var(--violet)) 0%,transparent 60%);opacity:.18;pointer-events:none}
+.coll-card .cc-name{font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--text);z-index:1;position:relative}
+.coll-card .cc-meta{font-size:12px;color:var(--text-dim);z-index:1;position:relative;display:flex;justify-content:space-between}
+.coll-card .cc-value{color:var(--gold-2);font-weight:700;font-family:'Cinzel',serif;font-size:14px}
+.coll-card .cc-thumbs{display:flex;margin-top:8px;height:42px;z-index:1;position:relative}
+.coll-card .cc-thumbs img{width:30px;height:42px;object-fit:cover;border-radius:4px;margin-left:-10px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.5)}
+.coll-card .cc-thumbs img:first-child{margin-left:0}
+
+.card-row{display:flex;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;align-items:center;cursor:pointer}
+.card-row img{width:46px;height:64px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--panel)}
+.card-row .info{flex:1;min-width:0}
+.card-row .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-row .sub{font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-row .price{font-weight:700;color:var(--gold-2);font-family:'Cinzel',serif;font-size:14px;white-space:nowrap}
+
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,255,255,.08);border:1px solid transparent}
+.chip-gold{background:rgba(201,160,75,.18);color:var(--gold-2);border-color:rgba(201,160,75,.35)}
+.chip-violet{background:rgba(160,102,255,.18);color:var(--violet-2);border-color:rgba(160,102,255,.35)}
+.chip-green{background:rgba(75,201,132,.18);color:var(--green);border-color:rgba(75,201,132,.35)}
+
+.segmented{display:flex;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;margin-bottom:12px;overflow-x:auto}
+.segmented button{padding:6px 12px;border-radius:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;font-weight:600}
+.segmented button.active{background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#231300}
+
+.empty{text-align:center;padding:40px 20px;color:var(--text-mute)}
+.empty .ic{font-size:48px;margin-bottom:12px;opacity:.4}
+.empty h3{margin-bottom:6px;color:var(--text-dim)}
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:120;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s ease}
+.modal{background:linear-gradient(180deg,var(--surface),var(--bg-2));border:1px solid var(--border);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom));animation:slide .3s cubic-bezier(.2,.9,.3,1)}
+@keyframes slide{from{transform:translateY(100%)}to{transform:none}}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.modal-head h2{font-size:16px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.05em}
+.modal-close{width:32px;height:32px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-dim)}
+
+.cam-wrap{position:relative;width:100%;aspect-ratio:3/4;border-radius:var(--radius);overflow:hidden;background:#000;margin-bottom:12px}
+.cam-wrap video{width:100%;height:100%;object-fit:cover}
+.cam-wrap canvas{display:none}
+.cam-overlay{position:absolute;inset:20px;border:2px dashed rgba(201,160,75,.8);border-radius:12px;pointer-events:none}
+
+.compare-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.compare-head{display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.compare-head .av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gold),var(--violet));font-size:18px;color:#fff;flex-shrink:0}
+.compare-head .nm{font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat-row{display:grid;grid-template-columns:1fr 1.4fr 1fr;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border);gap:6px}
+.stat-row:last-child{border-bottom:none}
+.stat-row .lbl{text-align:center;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em}
+.stat-row .v1,.stat-row .v2{font-family:'Cinzel',serif;font-size:15px;font-weight:700}
+.stat-row .v1{color:var(--gold-2);text-align:right;padding-right:8px}
+.stat-row .v2{color:var(--violet-2);text-align:left;padding-left:8px}
+.vs-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--panel);margin:4px 0}
+.vs-bar .p1{background:var(--gold)}
+.vs-bar .p2{background:var(--violet)}
+
+.game-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
+.game-bar-row .g-lbl{flex:0 0 90px;color:var(--text-dim)}
+.game-bar-row .g-bars{flex:1;display:flex;align-items:center;gap:4px}
+.game-bar{height:8px;background:var(--panel);border-radius:4px;flex:1;overflow:hidden}
+.game-bar .fill{height:100%;background:var(--gold);transition:width .4s}
+.game-bar.p2 .fill{background:var(--violet)}
+.game-bar-row .g-v{font-family:'Cinzel',serif;font-size:12px;font-weight:700;min-width:26px;text-align:center}
+
+.avatar-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
+.avatar-grid button{aspect-ratio:1;border-radius:12px;background:var(--panel);border:2px solid transparent;font-size:24px;display:flex;align-items:center;justify-content:center}
+.avatar-grid button.sel{border-color:var(--gold);background:rgba(201,160,75,.14)}
+
+.launch{position:fixed;inset:0;background:radial-gradient(800px 500px at 50% 20%,rgba(123,62,216,.35),transparent 60%),radial-gradient(600px 400px at 50% 110%,rgba(201,160,75,.25),transparent 60%),linear-gradient(180deg,#0b0618 0%,#0a0420 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;padding:24px;text-align:center;animation:fade .3s ease}
+.launch .logo-big{font-size:72px;margin-bottom:12px}
+.launch h1{font-size:36px;background:linear-gradient(135deg,var(--gold-2),var(--violet-2));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:8px}
+.launch .tagline{color:var(--text-dim);margin-bottom:28px;font-family:'Cinzel',serif;letter-spacing:.08em;font-size:13px;text-transform:uppercase}
+.launch-choices{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
+.profile-list{width:100%;max-width:360px;margin:0 auto 10px}
+.profile-item{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;cursor:pointer}
+.profile-item:hover{border-color:var(--gold)}
+.profile-item .av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gold),var(--violet));font-size:24px}
+.profile-item .info{flex:1;text-align:left}
+.profile-item .nm{font-family:'Cinzel',serif;font-weight:700;font-size:16px}
+.profile-item .stats{font-size:12px;color:var(--text-dim)}
+
+.toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:999px;box-shadow:var(--shadow);z-index:200;font-size:14px;max-width:90%;text-align:center}
+.toast.ok{border-color:rgba(75,201,132,.5)}
+.toast.err{border-color:rgba(224,90,90,.5)}
+
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.loader{position:fixed;inset:0;background:rgba(11,6,24,.8);z-index:150;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:var(--text-dim);font-family:'Cinzel',serif;letter-spacing:.08em;font-size:13px;text-transform:uppercase}
+.loader .spinner{width:42px;height:42px;border-width:3px}
+
+.card-detail img{width:100%;max-width:300px;border-radius:10px;display:block;margin:0 auto 14px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.card-detail .price-big{text-align:center;font-family:'Cinzel',serif;font-size:32px;color:var(--gold-2);margin-bottom:12px}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.meta-item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px}
+.meta-item .l{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:.05em}
+.meta-item .v{font-weight:600;font-size:13px;color:var(--text)}
+
+.search-res{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.hr-dim{height:1px;background:var(--border);margin:14px 0;border:none}
+.badge-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+
+.text-center{text-align:center}
+.mt-10{margin-top:10px}
+.mb-10{margin-bottom:10px}
+.mb-14{margin-bottom:14px}
+.flex{display:flex;align-items:center;gap:8px}
+.flex-between{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.grow{flex:1}
+.hidden{display:none!important}
+select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'><path fill='%23b8a9d4' d='M5 6L0 0h10z'/></svg>");background-repeat:no-repeat;background-position:right 12px center;background-size:10px;padding-right:32px}
+.scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
+img.err-hide{visibility:hidden}
+</style>
+</head>
+<body>
+
+<div id="launch" class="launch">
+  <div class="logo-big">🃏</div>
+  <h1>CardVault</h1>
+  <div class="tagline">TCG Collection Manager</div>
+  <div id="launchContent" class="launch-choices"></div>
+  <div class="join-note">Scanner IA • Collections partagées • 100% gratuit</div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">🃏</div>
+      <h1>CardVault</h1>
+    </div>
+    <div class="user-chip" data-act="switchProfile">
+      <div class="av" id="userAv">?</div>
+      <div class="nm" id="userNm">—</div>
+    </div>
+  </div>
+
+  <main>
+    <section id="view-collections" class="view active">
+      <div class="flex-between mb-10">
+        <h2 style="font-size:20px;color:var(--gold-2)">Mes Collections</h2>
+        <button class="btn btn-sm btn-violet" data-act="openNewCollection">+ Nouvelle</button>
+      </div>
+      <div id="collectionsGrid" class="coll-grid"></div>
+      <div id="collectionsEmpty" class="empty hidden">
+        <div class="ic">📦</div>
+        <h3>Aucune collection</h3>
+        <p class="muted">Créez votre première collection pour y ranger vos cartes.</p>
+        <button class="btn btn-primary mt-10" data-act="openNewCollection">Créer une collection</button>
+      </div>
+    </section>
+
+    <section id="view-add" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Ajouter une carte</h2>
+      <div class="panel">
+        <div class="panel-title">📷 Scanner IA (Gemini)</div>
+        <div class="cam-wrap hidden" id="camWrap">
+          <video id="camVideo" autoplay playsinline muted></video>
+          <canvas id="camCanvas"></canvas>
+          <div class="cam-overlay"></div>
+        </div>
+        <div class="scan-actions">
+          <button class="btn btn-primary" id="btnStartCam">🎥 Démarrer caméra</button>
+          <button class="btn btn-violet" id="btnCapture" disabled>📸 Scanner</button>
+        </div>
+        <div class="hint">500 scans/jour gratuits avec votre clé Gemini. Configurez-la dans l'onglet Config.</div>
+        <div id="scanResult" class="mt-10"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">🔍 Recherche manuelle</div>
+        <div class="field">
+          <label>Jeu</label>
+          <select id="searchGame">
+            <option value="mtg">Magic: The Gathering</option>
+            <option value="pokemon">Pokémon</option>
+            <option value="yugioh">Yu-Gi-Oh!</option>
+            <option value="lorcana">Lorcana</option>
+            <option value="onepiece">One Piece</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Nom de la carte</label>
+          <div class="row">
+            <input id="searchName" placeholder="ex: Black Lotus, Pikachu...">
+            <button class="btn btn-primary" style="flex:0 0 auto;width:auto" data-act="doSearch">Chercher</button>
+          </div>
+        </div>
+        <div id="searchResults" class="search-res"></div>
+      </div>
+    </section>
+
+    <section id="view-cards" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Toutes mes cartes</h2>
+      <div class="field">
+        <input id="filterCards" placeholder="Filtrer par nom...">
+      </div>
+      <div class="segmented" id="filterGameSeg"></div>
+      <div id="allCardsList"></div>
+    </section>
+
+    <section id="view-compare" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Comparer</h2>
+      <div id="compareContent"></div>
+    </section>
+
+    <section id="view-config" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Configuration</h2>
+      <div class="panel">
+        <div class="panel-title">👤 Profil actif</div>
+        <div id="profileInfo"></div>
+        <button class="btn btn-ghost btn-block mt-10" data-act="switchProfile">🔄 Changer de profil</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">☁️ GitHub Gist</div>
+        <div class="field">
+          <label>Token GitHub (scope: gist)</label>
+          <input id="cfgToken" type="password" placeholder="ghp_...">
+          <div class="hint">github.com/settings/tokens/new → coche "gist"</div>
+        </div>
+        <div class="field">
+          <label>Gist ID</label>
+          <input id="cfgGistId" placeholder="auto après création">
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" data-act="saveTokenAndSync">💾 Sauver & Sync</button>
+          <button class="btn btn-ghost" data-act="shareGistId">📋 Copier ID</button>
+        </div>
+        <div id="syncStatus" class="hint mt-10"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
+        <div class="field">
+          <label>API Key Gemini</label>
+          <input id="cfgGemini" type="password" placeholder="AIza...">
+          <div class="hint">aistudio.google.com/apikey — 500 scans/jour gratuits</div>
+        </div>
+        <button class="btn btn-primary btn-block" data-act="saveGemini">💾 Sauver la clé Gemini</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">ℹ️ À propos</div>
+        <div class="muted">CardVault v4 — PWA multi-utilisateurs</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Scryfall • PokéTCG • YGOPRODeck • Gemini 2.5 Flash • GitHub Gist</div>
+        <button class="btn btn-danger btn-block mt-10" data-act="resetApp">🗑️ Réinitialiser l'app</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-view="collections" class="active"><span class="ic">📚</span>Collections</button>
+    <button data-view="add"><span class="ic">➕</span>Ajouter</button>
+    <button data-view="cards"><span class="ic">🔎</span>Cartes</button>
+    <button data-view="compare"><span class="ic">⚖️</span>Comparer</button>
+    <button data-view="config"><span class="ic">⚙️</span>Config</button>
+  </nav>
+</div>
+
+<script>
+/* ==================== STATE & CONSTANTS ==================== */
+const GAMES = {
+  mtg:{name:'Magic',color:'#d04b2e',icon:'🔥'},
+  pokemon:{name:'Pokémon',color:'#ffcb05',icon:'⚡'},
+  yugioh:{name:'Yu-Gi-Oh!',color:'#8b2eff',icon:'👁️'},
+  lorcana:{name:'Lorcana',color:'#2ea6d0',icon:'🌊'},
+  onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️'}
+};
+const AVATARS=['🧙','🐉','🦊','🐺','🦅','🐲','🦁','🐯','🐱','🦄','🤖','🧛','⚔️','🛡️','🏹','🔮','🧝','👑','🎭','🃏','💎','🌟','⚡','🔥'];
+
+let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:''}};
+let CAM_STREAM=null;
+let _searchCache=[];
+let _scanCache=[];
+let _gameFilter='all';
+let _syncTimer=null;
+
+/* ==================== UTILS ==================== */
+function saveLocal(){try{localStorage.setItem('cardvault_state',JSON.stringify(STATE))}catch(e){}}
+function loadLocal(){try{const r=localStorage.getItem('cardvault_state');if(r){const p=JSON.parse(r);STATE=Object.assign(STATE,p);if(!STATE.users)STATE.users={};if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''}}}catch(e){}}
+function uid(){return Math.random().toString(36).slice(2,11)+Date.now().toString(36)}
+function fmtEur(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(msg,kind=''){const t=document.createElement('div');t.className='toast '+kind;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300)},2600)}
+function showLoader(label='Chargement…'){hideLoader();const el=document.createElement('div');el.className='loader';el.id='__loader';el.innerHTML='<div class="spinner"></div><div>'+esc(label)+'</div>';document.body.appendChild(el)}
+function hideLoader(){const l=document.getElementById('__loader');if(l)l.remove()}
+function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.activeUser])STATE.users[STATE.activeUser]={collections:[],cards:[],avatar:'🃏',createdAt:Date.now()};return STATE.users[STATE.activeUser]}
+function imgTag(src){return '<img src="'+esc(src||'')+'" alt="" data-err>'}
+
+/* ==================== ACTION DISPATCHER (CSP-safe) ==================== */
+const ACTIONS={};
+function registerActions(obj){Object.assign(ACTIONS,obj)}
+
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');
+  if(!el)return;
+  const act=el.dataset.act;
+  const fn=ACTIONS[act];
+  if(!fn)return;
+  e.preventDefault();
+  let args=[];
+  if(el.dataset.args){try{args=JSON.parse(el.dataset.args)}catch(_){}}
+  fn.apply(null,args);
+});
+
+// Handle broken images via delegation (onerror replacement)
+document.addEventListener('error',e=>{
+  if(e.target.tagName==='IMG' && e.target.hasAttribute('data-err')){
+    e.target.classList.add('err-hide');
+  }
+},true);
+
+/* ==================== MODAL ==================== */
+function openModal(title,bodyHtml,onReady){
+  closeModal();
+  const b=document.createElement('div');
+  b.className='modal-backdrop';b.id='__modal';
+  b.innerHTML='<div class="modal"><div class="modal-head"><h2>'+esc(title)+'</h2><button class="modal-close" data-act="closeModal">✕</button></div><div class="modal-body">'+bodyHtml+'</div></div>';
+  b.addEventListener('click',e=>{if(e.target===b)closeModal()});
+  document.body.appendChild(b);
+  if(onReady)onReady();
+}
+function closeModal(){const m=document.getElementById('__modal');if(m)m.remove()}
+
+/* ==================== LAUNCH / PROFILES ==================== */
+function renderLaunch(){
+  const c=document.getElementById('launchContent');
+  const pseudos=Object.keys(STATE.users);
+  let html='';
+  if(pseudos.length>0){
+    html+='<div class="profile-list">';
+    for(const p of pseudos){
+      const u=STATE.users[p];
+      const n=(u.cards||[]).reduce((s,x)=>s+(x.quantity||1),0);
+      const v=(u.cards||[]).reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
+      html+='<div class="profile-item" data-act="pickProfile" data-args="'+esc(JSON.stringify([p]))+'">'
+        +'<div class="av">'+esc(u.avatar||'🃏')+'</div>'
+        +'<div class="info"><div class="nm">'+esc(p)+'</div><div class="stats">'+n+' cartes • '+fmtEur(v)+'</div></div>'
+        +'<div style="color:var(--text-mute)">›</div></div>';
+    }
+    html+='</div>';
+    html+='<button class="btn btn-violet btn-block" data-act="openNewProfile">+ Nouveau profil</button>';
+    html+='<button class="btn btn-ghost btn-block" data-act="openJoinGist">🔗 Rejoindre un autre Gist</button>';
+  } else {
+    html+='<button class="btn btn-primary btn-block" data-act="openNewProfile">✨ Créer mon profil</button>';
+    html+='<button class="btn btn-ghost btn-block" data-act="openJoinGist">🔗 Rejoindre un Gist existant</button>';
+  }
+  c.innerHTML=html;
+}
+
+function pickProfile(p){STATE.activeUser=p;saveLocal();bootApp()}
+
+function openNewProfile(){
+  const existing=Object.keys(STATE.users);
+  let selectedAv=AVATARS[0];
+  openModal('Nouveau profil',
+    '<div class="field"><label>Pseudo</label><input id="np_name" placeholder="ex: Dylan" maxlength="20"></div>'
+    +'<div class="field"><label>Avatar</label><div class="avatar-grid" id="np_avatars">'
+    +AVATARS.map((a,i)=>'<button type="button" class="'+(i===0?'sel':'')+'" data-av="'+esc(a)+'">'+a+'</button>').join('')
+    +'</div></div>'
+    +'<button class="btn btn-primary btn-block" id="np_ok">Créer le profil</button>',
+    ()=>{
+      const grid=document.getElementById('np_avatars');
+      grid.addEventListener('click',ev=>{
+        const b=ev.target.closest('button[data-av]');
+        if(!b)return;
+        grid.querySelectorAll('button').forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+        selectedAv=b.dataset.av;
+      });
+      document.getElementById('np_ok').addEventListener('click',()=>{
+        const name=document.getElementById('np_name').value.trim();
+        if(!name){toast('Entrez un pseudo','err');return}
+        if(existing.includes(name)){toast('Pseudo déjà utilisé','err');return}
+        STATE.users[name]={collections:[],cards:[],avatar:selectedAv,createdAt:Date.now()};
+        STATE.activeUser=name;
+        saveLocal();
+        closeModal();
+        bootApp();
+      });
+    });
+}
+
+function openJoinGist(){
+  openModal('Rejoindre un Gist',
+    '<p class="muted mb-14">Entrez l\'ID du Gist partagé. Pas besoin de token GitHub si le Gist est public.</p>'
+    +'<div class="field"><label>Gist ID</label><input id="jg_id" placeholder="ex: 8a4f..."></div>'
+    +'<button class="btn btn-primary btn-block" id="jg_ok">Se connecter au Gist</button>'
+    +'<div id="jg_err" class="hint" style="color:var(--red);margin-top:10px"></div>',
+    ()=>{
+      document.getElementById('jg_ok').addEventListener('click',async()=>{
+        const id=document.getElementById('jg_id').value.trim();
+        if(!id){document.getElementById('jg_err').textContent='ID requis';return}
+        try{
+          showLoader('Connexion au Gist…');
+          const data=await fetchGist(id);
+          hideLoader();
+          if(data&&data.users){
+            STATE.users=Object.assign(STATE.users||{},data.users);
+            STATE.config.gistId=id;
+            saveLocal();
+            closeModal();
+            renderLaunch();
+            toast('Gist connecté : '+Object.keys(data.users).length+' profil(s)','ok');
+          } else {
+            document.getElementById('jg_err').textContent='Gist introuvable ou vide';
+          }
+        }catch(e){
+          hideLoader();
+          document.getElementById('jg_err').textContent='Erreur: '+e.message;
+        }
+      });
+    });
+}
+
+function switchProfile(){
+  if(CAM_STREAM)stopCamera();
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('launch').classList.remove('hidden');
+  renderLaunch();
+}
+
+/* ==================== TABS ==================== */
+function switchView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
+  const v=document.getElementById('view-'+name);
+  if(v)v.classList.add('active');
+  const btn=document.querySelector('.tabbar button[data-view="'+name+'"]');
+  if(btn)btn.classList.add('active');
+  if(name==='collections')renderCollections();
+  if(name==='cards')renderAllCards();
+  if(name==='compare')renderCompare();
+  if(name==='config')renderConfig();
+  if(name!=='add'&&CAM_STREAM)stopCamera();
+}
+
+/* ==================== GIST SYNC ==================== */
+const GIST_FILE='cardvault.json';
+
+async function fetchGist(id){
+  const headers={};
+  if(STATE.config.githubToken)headers.Authorization='token '+STATE.config.githubToken;
+  const r=await fetch('https://api.github.com/gists/'+id,{headers});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  const f=j.files[GIST_FILE]||Object.values(j.files)[0];
+  if(!f)return null;
+  let c=f.content;
+  if(f.truncated&&f.raw_url){const r2=await fetch(f.raw_url);c=await r2.text()}
+  try{return JSON.parse(c)}catch(e){return null}
+}
+
+async function createGist(){
+  if(!STATE.config.githubToken)throw new Error('Token GitHub manquant');
+  const body={description:'CardVault — TCG collection (multi-users)',public:false,files:{[GIST_FILE]:{content:JSON.stringify({version:4,users:STATE.users,updatedAt:Date.now()},null,2)}}};
+  const r=await fetch('https://api.github.com/gists',{method:'POST',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  return j.id;
+}
+
+async function updateGist(){
+  if(!STATE.config.githubToken||!STATE.config.gistId)throw new Error('Token ou Gist ID manquant');
+  const body={files:{[GIST_FILE]:{content:JSON.stringify({version:4,users:STATE.users,updatedAt:Date.now()},null,2)}}};
+  const r=await fetch('https://api.github.com/gists/'+STATE.config.gistId,{method:'PATCH',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return true;
+}
+
+async function pullGist(){
+  if(!STATE.config.gistId)return false;
+  const data=await fetchGist(STATE.config.gistId);
+  if(data&&data.users){
+    const merged=Object.assign({},data.users);
+    if(STATE.activeUser&&STATE.users[STATE.activeUser]){
+      merged[STATE.activeUser]=STATE.users[STATE.activeUser];
+    }
+    STATE.users=merged;
+    saveLocal();
+    return true;
+  }
+  return false;
+}
+
+function scheduleSync(){
+  if(!STATE.config.githubToken||!STATE.config.gistId)return;
+  clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(async()=>{
+    try{await updateGist();setSyncStatus('✅ Synchronisé '+new Date().toLocaleTimeString('fr-FR'))}
+    catch(e){setSyncStatus('⚠️ '+e.message)}
+  },1200);
+}
+function setSyncStatus(t){const el=document.getElementById('syncStatus');if(el)el.textContent=t}
+
+async function saveTokenAndSync(){
+  const token=document.getElementById('cfgToken').value.trim();
+  const gist=document.getElementById('cfgGistId').value.trim();
+  STATE.config.githubToken=token;
+  STATE.config.gistId=gist;
+  saveLocal();
+  if(!token){toast('Token requis','err');return}
+  try{
+    showLoader('Synchronisation…');
+    if(!STATE.config.gistId){
+      const id=await createGist();
+      STATE.config.gistId=id;
+      document.getElementById('cfgGistId').value=id;
+      saveLocal();
+      setSyncStatus('✅ Gist créé : '+id);
+      toast('Gist créé ✓','ok');
+    } else {
+      try{
+        const data=await fetchGist(STATE.config.gistId);
+        if(data&&data.users){
+          const merged=Object.assign({},data.users);
+          if(STATE.activeUser)merged[STATE.activeUser]=STATE.users[STATE.activeUser]||merged[STATE.activeUser]||{collections:[],cards:[]};
+          STATE.users=merged;
+          saveLocal();
+        }
+      }catch(_){}
+      await updateGist();
+      setSyncStatus('✅ Synchronisé '+new Date().toLocaleTimeString('fr-FR'));
+      toast('Synchronisé ✓','ok');
+    }
+  }catch(e){
+    setSyncStatus('⚠️ '+e.message);
+    toast('Échec : '+e.message,'err');
+  }finally{hideLoader()}
+}
+
+async function shareGistId(){
+  const id=STATE.config.gistId;
+  if(!id){toast('Aucun Gist ID','err');return}
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(id);
+      toast('ID copié ✓','ok');
+    } else {
+      prompt('Gist ID :',id);
+    }
+  }catch(e){prompt('Gist ID :',id)}
+}
+
+function saveGemini(){
+  STATE.config.geminiKey=document.getElementById('cfgGemini').value.trim();
+  saveLocal();
+  toast('Clé Gemini enregistrée ✓','ok');
+}
+
+function resetApp(){
+  if(!confirm('Tout effacer (local) ? Vos Gists ne sont pas touchés.'))return;
+  localStorage.removeItem('cardvault_state');
+  location.reload();
+}
+
+async function syncPull(){
+  try{
+    showLoader('Synchronisation…');
+    const ok=await pullGist();
+    if(ok){toast('À jour ✓','ok');renderCompare();renderCollections();renderAllCards()}
+    else toast('Rien à récupérer','err');
+  }catch(e){toast('Erreur: '+e.message,'err')}
+  finally{hideLoader()}
+}
+
+/* ==================== COLLECTIONS ==================== */
+function renderCollections(){
+  const u=getUser();
+  const grid=document.getElementById('collectionsGrid');
+  const empty=document.getElementById('collectionsEmpty');
+  if(!u||!u.collections||u.collections.length===0){grid.innerHTML='';empty.classList.remove('hidden');return}
+  empty.classList.add('hidden');
+  grid.innerHTML=u.collections.map(c=>{
+    const cards=(u.cards||[]).filter(x=>x.collectionId===c.id);
+    const val=cards.reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
+    const total=cards.reduce((s,x)=>s+(x.quantity||1),0);
+    const thumbs=cards.slice(0,4).map(x=>x.image?imgTag(x.image):'').join('');
+    return '<div class="coll-card" style="--cc:'+c.color+'" data-act="openCollection" data-args="'+esc(JSON.stringify([c.id]))+'">'
+      +'<div><div class="cc-name">'+esc(c.name)+'</div><div class="cc-meta"><span>'+total+' cartes</span><span>'+cards.length+' uniques</span></div></div>'
+      +'<div><div class="cc-thumbs">'+thumbs+'</div><div class="cc-value">'+fmtEur(val)+'</div></div></div>';
+  }).join('');
+}
+
+function openNewCollection(){
+  const colors=['#c9a04b','#7b3ed8','#4b7bd8','#4bc984','#e05a5a','#e09a4b','#b04bc9','#4bb0c9'];
+  let sel=colors[0];
+  openModal('Nouvelle collection',
+    '<div class="field"><label>Nom</label><input id="nc_name" placeholder="ex: Deck Commander"></div>'
+    +'<div class="field"><label>Couleur</label><div id="nc_colors" style="display:flex;gap:8px;flex-wrap:wrap">'
+    +colors.map((c,i)=>'<button type="button" data-c="'+c+'" style="width:36px;height:36px;border-radius:50%;background:'+c+';border:2px solid '+(i===0?'#fff':'transparent')+'"></button>').join('')
+    +'</div></div>'
+    +'<button class="btn btn-primary btn-block" id="nc_ok">Créer</button>',
+    ()=>{
+      const g=document.getElementById('nc_colors');
+      g.addEventListener('click',ev=>{
+        const b=ev.target.closest('button[data-c]');
+        if(!b)return;
+        g.querySelectorAll('button').forEach(x=>x.style.borderColor='transparent');
+        b.style.borderColor='#fff';
+        sel=b.dataset.c;
+      });
+      document.getElementById('nc_ok').addEventListener('click',()=>{
+        const name=document.getElementById('nc_name').value.trim();
+        if(!name){toast('Nom requis','err');return}
+        const u=getUser();
+        u.collections.push({id:uid(),name,color:sel,createdAt:Date.now()});
+        saveLocal();
+        scheduleSync();
+        closeModal();
+        renderCollections();
+        toast('Collection créée ✓','ok');
+      });
+    });
+}
+
+function openCollection(cid){
+  const u=getUser();
+  const coll=u.collections.find(c=>c.id===cid);
+  if(!coll)return;
+  const cards=(u.cards||[]).filter(c=>c.collectionId===cid);
+  const total=cards.reduce((s,x)=>s+(x.quantity||1),0);
+  const val=cards.reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
+  let sortBy='name';
+  const render=()=>{
+    let list=[...cards];
+    if(sortBy==='name')list.sort((a,b)=>a.name.localeCompare(b.name));
+    if(sortBy==='price')list.sort((a,b)=>(b.price||0)-(a.price||0));
+    if(sortBy==='game')list.sort((a,b)=>a.game.localeCompare(b.game));
+    document.getElementById('coll_list').innerHTML=list.length===0
+      ? '<div class="empty"><div class="ic">📭</div><h3>Vide</h3><p class="muted">Ajoutez des cartes depuis l\'onglet Ajouter.</p></div>'
+      : list.map(c=>renderCardRow(c)).join('');
+  };
+  openModal(coll.name,
+    '<div class="flex-between mb-10"><div class="muted">'+total+' cartes • '+fmtEur(val)+'</div>'
+    +'<button class="btn btn-sm btn-ghost" data-act="exportCsv" data-args="'+esc(JSON.stringify([cid]))+'">📥 CSV</button></div>'
+    +'<div class="segmented"><button class="active" data-s="name">Nom</button><button data-s="price">Prix</button><button data-s="game">Jeu</button></div>'
+    +'<div id="coll_list"></div>'
+    +'<hr class="hr-dim">'
+    +'<button class="btn btn-ghost btn-block" data-act="renameCollection" data-args="'+esc(JSON.stringify([cid]))+'">✏️ Renommer</button>'
+    +'<button class="btn btn-danger btn-block mt-10" data-act="deleteCollection" data-args="'+esc(JSON.stringify([cid]))+'">🗑️ Supprimer la collection</button>',
+    ()=>{
+      const seg=document.querySelector('#__modal .segmented');
+      seg.addEventListener('click',ev=>{
+        const b=ev.target.closest('button[data-s]');
+        if(!b)return;
+        seg.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        sortBy=b.dataset.s;
+        render();
+      });
+      render();
+    });
+}
+
+function renameCollection(cid){
+  const u=getUser();const c=u.collections.find(x=>x.id===cid);if(!c)return;
+  const nm=prompt('Nouveau nom :',c.name);
+  if(nm&&nm.trim()){c.name=nm.trim();saveLocal();scheduleSync();closeModal();renderCollections();toast('Renommé ✓','ok')}
+}
+
+function deleteCollection(cid){
+  if(!confirm('Supprimer cette collection et toutes ses cartes ?'))return;
+  const u=getUser();
+  u.collections=u.collections.filter(x=>x.id!==cid);
+  u.cards=(u.cards||[]).filter(c=>c.collectionId!==cid);
+  saveLocal();scheduleSync();closeModal();renderCollections();toast('Supprimée ✓','ok');
+}
+
+function exportCsv(cid){
+  const u=getUser();
+  const coll=u.collections.find(c=>c.id===cid);
+  const cards=(u.cards||[]).filter(c=>c.collectionId===cid);
+  const rows=[['name','game','set','quantity','price_eur']];
+  for(const c of cards)rows.push([c.name,GAMES[c.game]?.name||c.game,c.set||'',c.quantity||1,c.price||0]);
+  const csv=rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=(coll?.name||'collection')+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV téléchargé ✓','ok');
+}
+
+function renderCardRow(c){
+  const g=GAMES[c.game]||{name:c.game,color:'#888'};
+  return '<div class="card-row" data-act="openCardDetail" data-args="'+esc(JSON.stringify([c.id]))+'">'
+    +imgTag(c.image)
+    +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+    +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+((c.quantity||1)>1?' • x'+c.quantity:'')+'</div></div>'
+    +'<div class="price">'+fmtEur(c.price)+'</div></div>';
+}
+
+function openCardDetail(cardId){
+  const u=getUser();
+  const c=(u.cards||[]).find(x=>x.id===cardId);
+  if(!c)return;
+  const g=GAMES[c.game]||{name:c.game};
+  const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
+  openModal('Détails de la carte',
+    '<div class="card-detail">'
+    +(c.image?'<img src="'+esc(c.image)+'" alt="" data-err>':'')
+    +'<div class="price-big">'+fmtEur(c.price)+'</div>'
+    +'<div class="meta-grid">'
+    +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
+    +'<div class="meta-item"><div class="l">Jeu</div><div class="v">'+esc(g.name)+'</div></div>'
+    +'<div class="meta-item"><div class="l">Extension</div><div class="v">'+esc(c.set||'—')+'</div></div>'
+    +'<div class="meta-item"><div class="l">Quantité</div><div class="v">'+(c.quantity||1)+'</div></div>'
+    +'</div>'
+    +'<div class="field"><label>Quantité</label><div class="row">'
+    +'<button class="btn btn-ghost" data-act="adjQty" data-args="'+esc(JSON.stringify([c.id,-1]))+'">−</button>'
+    +'<input id="qty_'+c.id+'" type="number" value="'+(c.quantity||1)+'" min="1" readonly style="text-align:center">'
+    +'<button class="btn btn-ghost" data-act="adjQty" data-args="'+esc(JSON.stringify([c.id,1]))+'">+</button>'
+    +'</div></div>'
+    +'<div class="field"><label>Collection</label><select id="cd_coll">'+collOptions+'</select></div>'
+    +'<div class="row">'
+    +'<button class="btn btn-primary" data-act="saveCardChanges" data-args="'+esc(JSON.stringify([c.id]))+'">💾 Sauver</button>'
+    +'<button class="btn btn-ghost" data-act="refreshPrice" data-args="'+esc(JSON.stringify([c.id]))+'">🔄 MAJ prix</button>'
+    +'</div>'
+    +'<button class="btn btn-danger btn-block mt-10" data-act="deleteCard" data-args="'+esc(JSON.stringify([c.id]))+'">🗑️ Supprimer</button>'
+    +'</div>');
+}
+
+function adjQty(id,d){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  c.quantity=Math.max(1,(c.quantity||1)+d);
+  const inp=document.getElementById('qty_'+id);if(inp)inp.value=c.quantity;
+  saveLocal();scheduleSync();
+}
+
+function saveCardChanges(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  c.collectionId=document.getElementById('cd_coll').value;
+  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Sauvé ✓','ok');
+}
+
+async function refreshPrice(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  try{
+    showLoader('Mise à jour du prix…');
+    const res=await searchCards(c.game,c.name,1);
+    if(res.length>0&&res[0].price!=null){
+      c.price=res[0].price;saveLocal();scheduleSync();
+      toast('Prix actualisé : '+fmtEur(c.price),'ok');
+      openCardDetail(id);
+    } else toast('Prix non trouvé','err');
+  }catch(e){toast('Erreur: '+e.message,'err')}
+  finally{hideLoader()}
+}
+
+function deleteCard(id){
+  if(!confirm('Supprimer cette carte ?'))return;
+  const u=getUser();
+  u.cards=(u.cards||[]).filter(c=>c.id!==id);
+  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Supprimée ✓','ok');
+}
+
+/* ==================== ALL CARDS ==================== */
+function renderAllCards(){
+  const u=getUser();if(!u)return;
+  const seg=document.getElementById('filterGameSeg');
+  if(seg&&seg.childElementCount===0){
+    seg.innerHTML='<button class="active" data-g="all">Tous</button>'+Object.entries(GAMES).map(([k,g])=>'<button data-g="'+k+'">'+g.icon+' '+g.name+'</button>').join('');
+    seg.addEventListener('click',e=>{
+      const b=e.target.closest('button[data-g]');if(!b)return;
+      seg.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');_gameFilter=b.dataset.g;renderAllCards();
+    });
+  }
+  const f=(document.getElementById('filterCards')?.value||'').toLowerCase();
+  let cards=[...(u.cards||[])];
+  if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
+  if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f));
+  cards.sort((a,b)=>a.name.localeCompare(b.name));
+  const list=document.getElementById('allCardsList');
+  list.innerHTML=cards.length===0
+    ? '<div class="empty"><div class="ic">🔍</div><h3>Aucune carte</h3></div>'
+    : cards.map(c=>renderCardRow(c)).join('');
+}
+
+/* ==================== PRICE APIs ==================== */
+async function searchCards(game,name,limit=12){
+  const q=name.trim();if(!q)return [];
+  if(game==='mtg')return searchScryfall(q,limit);
+  if(game==='pokemon')return searchPokemon(q,limit);
+  if(game==='yugioh')return searchYugioh(q,limit);
+  return [{id:uid(),name:q,game,set:'',image:'',price:null,_noPrice:true}];
+}
+
+async function searchScryfall(q,limit){
+  const r=await fetch('https://api.scryfall.com/cards/search?q='+encodeURIComponent(q)+'&unique=prints');
+  if(!r.ok){if(r.status===404)return [];throw new Error('Scryfall HTTP '+r.status)}
+  const j=await r.json();
+  return (j.data||[]).slice(0,limit).map(c=>{
+    const price=c.prices?.eur?parseFloat(c.prices.eur):(c.prices?.usd?parseFloat(c.prices.usd)*0.92:null);
+    return {id:uid(),game:'mtg',name:c.name,set:c.set_name,image:c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'',price:price!=null?Math.round(price*100)/100:null};
+  });
+}
+
+async function searchPokemon(q,limit){
+  const r=await fetch('https://api.pokemontcg.io/v2/cards?q=name:"'+encodeURIComponent(q)+'*"&pageSize='+limit);
+  if(!r.ok)throw new Error('PokéTCG HTTP '+r.status);
+  const j=await r.json();
+  return (j.data||[]).map(c=>{
+    const cm=c.cardmarket?.prices;
+    const tp=c.tcgplayer?.prices;
+    const tpMarket=tp?Object.values(tp)[0]?.market:null;
+    const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
+    return {id:uid(),game:'pokemon',name:c.name,set:c.set?.name||'',image:c.images?.small||c.images?.large||'',price:price!=null?Math.round(price*100)/100:null};
+  });
+}
+
+async function searchYugioh(q,limit){
+  const r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname='+encodeURIComponent(q));
+  if(!r.ok){if(r.status===400)return [];throw new Error('YGOPRODeck HTTP '+r.status)}
+  const j=await r.json();
+  return (j.data||[]).slice(0,limit).map(c=>{
+    const price=c.card_prices?.[0]?.cardmarket_price?parseFloat(c.card_prices[0].cardmarket_price):null;
+    return {id:uid(),game:'yugioh',name:c.name,set:c.card_sets?.[0]?.set_name||'',image:c.card_images?.[0]?.image_url_small||c.card_images?.[0]?.image_url||'',price};
+  });
+}
+
+async function doSearch(){
+  const game=document.getElementById('searchGame').value;
+  const name=document.getElementById('searchName').value.trim();
+  const box=document.getElementById('searchResults');
+  if(!name){box.innerHTML='';return}
+  box.innerHTML='<div class="flex" style="justify-content:center;padding:20px"><div class="spinner"></div></div>';
+  try{
+    const res=await searchCards(game,name,15);
+    _searchCache=res;
+    if(res.length===0){box.innerHTML='<div class="empty"><div class="ic">😶</div><h3>Aucun résultat</h3></div>';return}
+    box.innerHTML=res.map((c,i)=>{
+      const g=GAMES[c.game]||{};
+      return '<div class="card-row" data-act="pickSearchResult" data-args="'+esc(JSON.stringify([i]))+'">'
+        +imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(c.set||g.name)+'</div></div>'
+        +'<div class="price">'+(c._noPrice?'Ajouter':fmtEur(c.price))+'</div></div>';
+    }).join('');
+  }catch(e){
+    box.innerHTML='<div class="empty"><div class="ic">⚠️</div><h3>Erreur</h3><p class="muted">'+esc(e.message)+'</p></div>';
+  }
+}
+
+function pickSearchResult(i){const c=_searchCache[i];if(c)chooseCollectionAndAdd(c)}
+function pickScanResult(i){const c=_scanCache[i];if(c)chooseCollectionAndAdd(c)}
+
+function chooseCollectionAndAdd(card){
+  const u=getUser();
+  if(!u.collections||u.collections.length===0){
+    if(!confirm('Aucune collection. Créer une collection "Principale" ?'))return;
+    u.collections.push({id:uid(),name:'Principale',color:'#c9a04b',createdAt:Date.now()});
+    saveLocal();
+  }
+  const opts=u.collections.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+  openModal('Ajouter à une collection',
+    '<div class="card-detail">'
+    +(card.image?'<img src="'+esc(card.image)+'" alt="" style="max-width:180px" data-err>':'')
+    +'<div style="text-align:center" class="mb-14">'
+    +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(card.name)+'</div>'
+    +'<div class="muted">'+esc(card.set||'')+' • '+fmtEur(card.price)+'</div></div>'
+    +'<div class="field"><label>Collection</label><select id="add_coll">'+opts+'</select></div>'
+    +'<div class="field"><label>Quantité</label><input id="add_qty" type="number" value="1" min="1"></div>'
+    +(card.price==null?'<div class="field"><label>Prix (€) optionnel</label><input id="add_price" type="number" step="0.01" placeholder="0.00"></div>':'')
+    +'<button class="btn btn-primary btn-block" id="add_ok">✅ Ajouter à la collection</button>'
+    +'</div>',
+    ()=>{
+      document.getElementById('add_ok').addEventListener('click',()=>{
+        const cid=document.getElementById('add_coll').value;
+        const qty=Math.max(1,parseInt(document.getElementById('add_qty').value)||1);
+        const pi=document.getElementById('add_price');
+        const price=pi?(parseFloat(pi.value)||null):card.price;
+        const u=getUser();u.cards=u.cards||[];
+        const existing=u.cards.find(x=>x.collectionId===cid&&x.name===card.name&&(x.set||'')===(card.set||'')&&x.game===card.game);
+        if(existing){
+          existing.quantity=(existing.quantity||1)+qty;
+          if(price!=null)existing.price=price;
+          toast('Quantité mise à jour ✓','ok');
+        } else {
+          u.cards.push({id:uid(),collectionId:cid,name:card.name,game:card.game,set:card.set||'',image:card.image||'',price,quantity:qty,addedAt:Date.now()});
+          toast('Carte ajoutée ✓','ok');
+        }
+        saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+      });
+    });
+}
+
+/* ==================== SCAN (Gemini) ==================== */
+function mapGame(g){
+  if(!g)return 'mtg';g=String(g).toLowerCase();
+  if(g.includes('magic')||g.includes('mtg'))return 'mtg';
+  if(g.includes('pok'))return 'pokemon';
+  if(g.includes('yu')||g.includes('gi'))return 'yugioh';
+  if(g.includes('lorcana')||g.includes('disney'))return 'lorcana';
+  if(g.includes('one piece')||g.includes('op'))return 'onepiece';
+  return 'mtg';
+}
+
+async function geminiIdentify(base64){
+  const prompt='Tu es un expert en cartes TCG. Analyse cette image et identifie la carte. Réponds UNIQUEMENT avec un JSON valide, sans texte avant/après, sans markdown : {"name":"nom exact de la carte en anglais si possible","game":"Magic | Pokemon | Yu-Gi-Oh! | Lorcana | One Piece","set":"nom ou code de l\'extension si visible","confidence":"high|medium|low"}. Si ce n\'est pas une carte TCG identifiable, réponds {"name":null}.';
+  const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:base64}}]}],generationConfig:{temperature:0.1,responseMimeType:'application/json'}};
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+encodeURIComponent(STATE.config.geminiKey),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const t=await r.text();throw new Error('HTTP '+r.status+': '+t.slice(0,120))}
+  const j=await r.json();
+  const text=j.candidates?.[0]?.content?.parts?.[0]?.text||'{}';
+  try{return JSON.parse(text)}
+  catch(_){const m=text.match(/\{[\s\S]*\}/);if(m)try{return JSON.parse(m[0])}catch(__){}return null}
+}
+
+function stopCamera(){
+  if(CAM_STREAM){CAM_STREAM.getTracks().forEach(t=>t.stop());CAM_STREAM=null}
+  const w=document.getElementById('camWrap');if(w)w.classList.add('hidden');
+  const b=document.getElementById('btnStartCam');if(b)b.textContent='🎥 Démarrer caméra';
+  const c=document.getElementById('btnCapture');if(c)c.disabled=true;
+}
+
+async function startCamera(){
+  const btn=document.getElementById('btnStartCam');
+  const wrap=document.getElementById('camWrap');
+  const video=document.getElementById('camVideo');
+  const cap=document.getElementById('btnCapture');
+  if(CAM_STREAM){stopCamera();return}
+  try{
+    CAM_STREAM=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    video.srcObject=CAM_STREAM;
+    wrap.classList.remove('hidden');
+    btn.textContent='⏹ Arrêter caméra';
+    cap.disabled=false;
+  }catch(e){toast('Accès caméra refusé: '+e.message,'err')}
+}
+
+async function captureCard(){
+  if(!STATE.config.geminiKey){toast('Configurez la clé Gemini (onglet Config)','err');return}
+  const video=document.getElementById('camVideo');
+  const canvas=document.getElementById('camCanvas');
+  const w=video.videoWidth,h=video.videoHeight;
+  if(!w||!h){toast('Caméra non prête','err');return}
+  canvas.width=w;canvas.height=h;
+  canvas.getContext('2d').drawImage(video,0,0,w,h);
+  const base64=canvas.toDataURL('image/jpeg',0.85).split(',')[1];
+  const box=document.getElementById('scanResult');
+  box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">Analyse Gemini…</span></div>';
+  try{
+    const info=await geminiIdentify(base64);
+    if(!info||!info.name){box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Carte non identifiée</h3><p class="muted">Réessayez avec un meilleur cadrage.</p></div>';return}
+    const game=mapGame(info.game);
+    const results=await searchCards(game,info.name,5);
+    _scanCache=results.slice();
+    const manual={id:uid(),name:info.name,game,set:info.set||'',image:'',price:null,_noPrice:true};
+    _scanCache.push(manual);
+    const manualIdx=_scanCache.length-1;
+    let inner='';
+    if(results.length===0){
+      inner='<div class="muted">Aucun prix trouvé — <a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Ajouter manuellement</a></div>';
+    } else {
+      inner=results.map((c,i)=>{
+        const g=GAMES[c.game]||{};
+        return '<div class="card-row" data-act="pickScanResult" data-args="'+esc(JSON.stringify([i]))+'">'
+          +imgTag(c.image)
+          +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+          +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(c.set||g.name)+'</div></div>'
+          +'<div class="price">'+fmtEur(c.price)+'</div></div>';
+      }).join('')
+      +'<div class="muted text-center mt-10"><a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Aucun ne correspond ? Ajouter manuellement</a></div>';
+    }
+    box.innerHTML='<div class="panel" style="margin-bottom:0;background:rgba(201,160,75,.08)">'
+      +'<div class="flex-between mb-10"><div>'
+      +'<div style="font-family:\'Cinzel\',serif;font-size:16px">'+esc(info.name)+'</div>'
+      +'<div class="muted">'+esc(GAMES[game]?.name||info.game||'')+(info.set?' • '+esc(info.set):'')+'</div></div>'
+      +'<span class="chip chip-gold">IA</span></div>'
+      +'<div class="hint">'+results.length+' correspondance(s) trouvée(s)</div>'
+      +'<div class="search-res mt-10">'+inner+'</div></div>';
+  }catch(e){
+    box.innerHTML='<div class="empty"><div class="ic">⚠️</div><h3>Erreur Gemini</h3><p class="muted">'+esc(e.message)+'</p></div>';
+  }
+}
+
+/* ==================== COMPARE ==================== */
+function renderCompare(){
+  const pseudos=Object.keys(STATE.users);
+  const box=document.getElementById('compareContent');
+  if(pseudos.length<2){
+    box.innerHTML='<div class="empty"><div class="ic">⚖️</div><h3>Besoin de 2 profils</h3>'
+      +'<p class="muted">Actuellement '+pseudos.length+' profil(s) dans le Gist.</p>'
+      +'<p class="muted mb-14">Partagez votre Gist ID pour que votre partenaire puisse rejoindre.</p>'
+      +'<button class="btn btn-primary mt-10" data-act="shareGistId">📋 Copier Gist ID</button>'
+      +'<button class="btn btn-ghost mt-10" data-act="switchView" data-args="[&quot;config&quot;]">⚙️ Config</button></div>';
+    return;
+  }
+  const ordered=[STATE.activeUser,...pseudos.filter(p=>p!==STATE.activeUser)].filter(Boolean);
+  const p1=ordered[0],p2=ordered[1];
+  const u1=STATE.users[p1],u2=STATE.users[p2];
+  const c1=u1.cards||[],c2=u2.cards||[];
+  const n1=c1.reduce((s,c)=>s+(c.quantity||1),0);
+  const n2=c2.reduce((s,c)=>s+(c.quantity||1),0);
+  const v1=c1.reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+  const v2=c2.reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+  const coll1=(u1.collections||[]).length,coll2=(u2.collections||[]).length;
+  const games1=new Set(c1.map(c=>c.game)),games2=new Set(c2.map(c=>c.game));
+  const key=c=>c.game+'::'+c.name.toLowerCase();
+  const set1=new Map(c1.map(c=>[key(c),c]));
+  const set2=new Map(c2.map(c=>[key(c),c]));
+  const common=[];for(const [k,c] of set1)if(set2.has(k))common.push({c1:c,c2:set2.get(k)});
+  const only1=c1.filter(c=>!set2.has(key(c)));
+  const only2=c2.filter(c=>!set1.has(key(c)));
+  const top1=[...c1].sort((a,b)=>(b.price||0)-(a.price||0))[0];
+  const top2=[...c2].sort((a,b)=>(b.price||0)-(a.price||0))[0];
+  const gameCounts1={},gameCounts2={};
+  for(const c of c1)gameCounts1[c.game]=(gameCounts1[c.game]||0)+(c.quantity||1);
+  for(const c of c2)gameCounts2[c.game]=(gameCounts2[c.game]||0)+(c.quantity||1);
+  const maxN=Math.max(n1,n2,1),maxV=Math.max(v1,v2,1),maxC=Math.max(coll1,coll2,1),maxG=Math.max(games1.size,games2.size,1);
+
+  box.innerHTML=
+    '<div class="compare-split">'
+    +'<div class="compare-head"><div class="av">'+esc(u1.avatar||'🃏')+'</div><div class="nm">'+esc(p1)+'</div></div>'
+    +'<div class="compare-head"><div class="av" style="background:linear-gradient(135deg,var(--violet),var(--blue))">'+esc(u2.avatar||'🃏')+'</div><div class="nm">'+esc(p2)+'</div></div>'
+    +'</div>'
+    +'<div class="panel"><div class="panel-title">📊 Stats globales</div>'
+    +statRow('Cartes',n1,n2,null,n1,n2,maxN)
+    +statRow('Valeur',fmtEur(v1),fmtEur(v2),null,v1,v2,maxV)
+    +statRow('Collections',coll1,coll2,null,coll1,coll2,maxC)
+    +statRow('Jeux',games1.size,games2.size,null,games1.size,games2.size,maxG)
+    +'</div>'
+    +'<div class="panel"><div class="panel-title">🎴 Répartition par jeu</div>'
+    +Object.keys(GAMES).map(g=>{
+      const a=gameCounts1[g]||0,b=gameCounts2[g]||0,mx=Math.max(a,b,1);
+      return '<div class="game-bar-row"><div class="g-lbl">'+GAMES[g].icon+' '+GAMES[g].name+'</div><div class="g-bars">'
+        +'<div class="g-v" style="color:var(--gold-2)">'+a+'</div>'
+        +'<div class="game-bar"><div class="fill" style="width:'+(a/mx*100)+'%"></div></div>'
+        +'<div class="game-bar p2"><div class="fill" style="width:'+(b/mx*100)+'%"></div></div>'
+        +'<div class="g-v" style="color:var(--violet-2)">'+b+'</div></div></div>';
+    }).join('')
+    +'</div>'
+    +'<div class="panel"><div class="panel-title">💎 Carte la plus chère</div>'
+    +'<div class="compare-split" style="gap:10px">'+topCardBlock(top1)+topCardBlock(top2)+'</div></div>'
+    +'<div class="panel"><div class="panel-title">🤝 Cartes en commun <span class="chip chip-green">'+common.length+'</span></div>'
+    +(common.length===0?'<div class="muted">Aucune carte en commun.</div>':
+      common.slice(0,20).map(({c1:a,c2:b})=>{
+        const g=GAMES[a.game]||{};
+        return '<div class="card-row">'+imgTag(a.image||b.image)
+          +'<div class="info"><div class="nm">'+esc(a.name)+'</div>'
+          +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(a.set?' • '+esc(a.set):'')+'</div></div>'
+          +'<span class="chip chip-green">En commun</span></div>';
+      }).join('')+(common.length>20?'<div class="muted text-center mt-10">+'+(common.length-20)+' autres</div>':''))
+    +'</div>'
+    +'<div class="panel"><div class="panel-title">✨ Exclusives de '+esc(p1)+' <span class="chip chip-gold">'+only1.length+'</span></div>'
+    +(only1.length===0?'<div class="muted">Aucune carte exclusive.</div>':only1.slice(0,10).map(c=>{
+      const g=GAMES[c.game]||{};
+      return '<div class="card-row">'+imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+'</div></div>'
+        +'<span class="chip chip-gold">'+esc(p1)+'</span></div>';
+    }).join('')+(only1.length>10?'<div class="muted text-center mt-10">+'+(only1.length-10)+' autres</div>':''))
+    +'</div>'
+    +'<div class="panel"><div class="panel-title">✨ Exclusives de '+esc(p2)+' <span class="chip chip-violet">'+only2.length+'</span></div>'
+    +(only2.length===0?'<div class="muted">Aucune carte exclusive.</div>':only2.slice(0,10).map(c=>{
+      const g=GAMES[c.game]||{};
+      return '<div class="card-row">'+imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+'</div></div>'
+        +'<span class="chip chip-violet">'+esc(p2)+'</span></div>';
+    }).join('')+(only2.length>10?'<div class="muted text-center mt-10">+'+(only2.length-10)+' autres</div>':''))
+    +'</div>'
+    +'<div class="text-center muted" style="margin:14px 0"><button class="btn btn-ghost btn-sm" data-act="syncPull">🔄 Rafraîchir depuis le Gist</button></div>';
+}
+
+function statRow(label,v1Raw,v2Raw,_ignored,n1,n2,max){
+  const p1pct=max>0?Math.min(100,(n1/max)*100):0;
+  const p2pct=max>0?Math.min(100,(n2/max)*100):0;
+  return '<div class="stat-row">'
+    +'<div class="v1">'+v1Raw+'</div>'
+    +'<div><div class="lbl">'+label+'</div><div class="vs-bar"><div class="p1" style="width:'+(p1pct/2)+'%"></div><div style="flex:1"></div><div class="p2" style="width:'+(p2pct/2)+'%"></div></div></div>'
+    +'<div class="v2">'+v2Raw+'</div></div>';
+}
+
+function topCardBlock(c){
+  if(!c)return '<div class="card-row" style="opacity:.5"><div class="info"><div class="nm">—</div><div class="sub">Aucune carte</div></div></div>';
+  const g=GAMES[c.game]||{};
+  return '<div class="card-row" style="flex-direction:column;align-items:flex-start;padding:10px">'
+    +(c.image?'<img src="'+esc(c.image)+'" alt="" data-err style="width:100%;height:auto;margin-bottom:6px;aspect-ratio:2.5/3.5;object-fit:cover">':'')
+    +'<div class="info" style="width:100%"><div class="nm">'+esc(c.name)+'</div>'
+    +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+'</div>'
+    +'<div class="price" style="margin-top:4px">'+fmtEur(c.price)+'</div></div></div>';
+}
+
+/* ==================== CONFIG ==================== */
+function renderConfig(){
+  const u=getUser();
+  const cards=(u?.cards||[]).reduce((s,c)=>s+(c.quantity||1),0);
+  const val=(u?.cards||[]).reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+  const box=document.getElementById('profileInfo');
+  box.innerHTML='<div class="flex">'
+    +'<div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gold),var(--violet));font-size:24px">'+esc(u?.avatar||'🃏')+'</div>'
+    +'<div class="grow"><div style="font-family:\'Cinzel\',serif;font-weight:700">'+esc(STATE.activeUser||'—')+'</div>'
+    +'<div class="muted">'+cards+' cartes • '+fmtEur(val)+'</div></div></div>';
+  document.getElementById('cfgToken').value=STATE.config.githubToken||'';
+  document.getElementById('cfgGistId').value=STATE.config.gistId||'';
+  document.getElementById('cfgGemini').value=STATE.config.geminiKey||'';
+  if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
+}
+
+/* ==================== HEADER / BOOT ==================== */
+function updateHeader(){
+  const u=getUser();
+  document.getElementById('userAv').textContent=u?.avatar||'🃏';
+  document.getElementById('userNm').textContent=STATE.activeUser||'—';
+}
+
+function bootApp(){
+  document.getElementById('launch').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  updateHeader();
+  renderCollections();
+  if(STATE.config.gistId){
+    pullGist().then(ok=>{if(ok)renderCollections()}).catch(()=>{});
+  }
+}
+
+/* ==================== REGISTER ACTIONS ==================== */
+registerActions({
+  pickProfile,openNewProfile,openJoinGist,closeModal,switchProfile,
+  openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
+  openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,
+  doSearch,pickSearchResult,pickScanResult,
+  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,
+  switchView
+});
+
+/* ==================== WIRING ==================== */
+document.getElementById('tabbar').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-view]');
+  if(b)switchView(b.dataset.view);
+});
+document.getElementById('btnStartCam').addEventListener('click',startCamera);
+document.getElementById('btnCapture').addEventListener('click',captureCard);
+document.getElementById('filterCards').addEventListener('input',renderAllCards);
+document.getElementById('searchName').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
+
+/* ==================== INIT ==================== */
+loadLocal();
+if(STATE.activeUser&&STATE.users[STATE.activeUser]){bootApp()}
+else{renderLaunch()}
+</script>
+</body>
+</html>
