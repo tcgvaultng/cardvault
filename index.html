@@ -295,7 +295,6 @@ img.err-hide{visibility:hidden}
               <option value="mtg">Magic: The Gathering</option>
               <option value="pokemon">Pokémon</option>
               <option value="yugioh">Yu-Gi-Oh!</option>
-              <option value="lorcana">Lorcana</option>
               <option value="onepiece">One Piece</option>
             </select>
           </div>
@@ -398,8 +397,7 @@ const GAMES = {
   mtg:{name:'Magic',color:'#d04b2e',icon:'🔥',langs:['en','fr','de','it','es','pt','ja','ko','ru','zhs','zht']},
   pokemon:{name:'Pokémon',color:'#ffcb05',icon:'⚡',langs:['en','fr','de','it','es','pt','ja','ko','zht']},
   yugioh:{name:'Yu-Gi-Oh!',color:'#8b2eff',icon:'👁️',langs:['en','fr','de','it','pt']},
-  lorcana:{name:'Lorcana',color:'#2ea6d0',icon:'🌊',langs:['en']},
-  onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️',langs:['en']}
+  onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️',langs:['en','ja']}
 };
 const AVATARS=['🧙','🐉','🦊','🐺','🦅','🐲','🦁','🐯','🐱','🦄','🤖','🧛','⚔️','🛡️','🏹','🔮','🧝','👑','🎭','🃏','💎','🌟','⚡','🔥'];
 const LANGS={
@@ -1168,7 +1166,99 @@ async function searchCards(game,name,lang,limit,opts){
   if(game==='mtg')return searchScryfall(q,lang,limit,opts);
   if(game==='pokemon')return searchPokemon(q,lang,limit,opts);
   if(game==='yugioh')return searchYugioh(q,lang,limit,opts);
+  if(game==='onepiece')return searchOnePiece(q,lang,limit,opts);
   return [{id:uid(),name:q,game,set:opts.set||'',image:'',price:null,lang,_noPrice:true}];
+}
+
+/* ==================== ONE PIECE (vegapull-records) ==================== */
+let _opCache=null;
+let _opLoadPromise=null;
+const OP_REPO='https://raw.githubusercontent.com/coko7/vegapull-records/main/data';
+
+async function loadOnePieceData(){
+  if(_opCache)return _opCache;
+  if(_opLoadPromise)return _opLoadPromise;
+  _opLoadPromise=(async()=>{
+    // 1) EN : packs.json puis fichiers de cartes en parallèle
+    const enCards=[];
+    try{
+      const packsR=await fetch(OP_REPO+'/english/packs.json');
+      const packs=await packsR.json();
+      const chunks=await Promise.all(packs.map(async p=>{
+        try{
+          const r=await fetch(OP_REPO+'/english/cards_'+p.id+'.json');
+          if(!r.ok)return [];
+          const arr=await r.json();
+          const setName=p.title_parts?.title||p.raw_title||p.id;
+          const setLabel=p.title_parts?.label||'';
+          return arr.map(c=>({...c,_setName:setName,_setLabel:setLabel}));
+        }catch(_){return []}
+      }));
+      chunks.forEach(ch=>enCards.push(...ch));
+    }catch(_){}
+    // 2) JA : fichier unique avec structure nested
+    const jaCards=[];
+    try{
+      const jaR=await fetch(OP_REPO+'/japanese/cards.json');
+      const ja=await jaR.json();
+      const baseUrl=ja.base_url||'https://asia-en.onepiece-cardgame.com';
+      (ja.card_sets||[]).forEach(s=>{
+        const setName=s.title||s.id;
+        const setLabel=s.label||s.id||'';
+        (s.cards||[]).forEach(c=>{
+          const rel=(c.img_url||'').replace(/^\.\./,'');
+          jaCards.push({
+            ...c,
+            _setName:setName,
+            _setLabel:setLabel,
+            img_full_url:rel?(baseUrl+rel):''
+          });
+        });
+      });
+    }catch(_){}
+    _opCache={en:enCards,ja:jaCards};
+    return _opCache;
+  })();
+  try{return await _opLoadPromise}
+  finally{_opLoadPromise=null}
+}
+
+async function searchOnePiece(q,lang,limit,opts){
+  opts=opts||{};
+  const useJa=(lang==='ja');
+  const data=await loadOnePieceData();
+  const cards=useJa?data.ja:data.en;
+  if(!cards||cards.length===0){
+    // Fallback vers EN si JA vide
+    if(useJa&&data.en?.length)return searchOnePiece(q,'en',limit,opts);
+    return [];
+  }
+  const qL=(q||'').toLowerCase();
+  const setL=(opts.set||'').toLowerCase().trim();
+  const nL=(opts.number||'').trim().replace(/^0+/,'');
+  const filtered=cards.filter(c=>{
+    if(qL && !(c.name||'').toLowerCase().includes(qL))return false;
+    if(setL){
+      const s=(c._setName||'').toLowerCase();
+      const sl=(c._setLabel||'').toLowerCase();
+      const id=(c.id||'').toLowerCase();
+      if(!s.includes(setL)&&!sl.includes(setL)&&!id.toLowerCase().startsWith(setL))return false;
+    }
+    if(nL){
+      const num=((c.id||'').split('-')[1]||'').replace(/^0+/,'').split('_')[0];
+      if(num!==nL && !num.startsWith(nL))return false;
+    }
+    return true;
+  }).slice(0,limit);
+  return filtered.map(c=>({
+    id:uid(),game:'onepiece',
+    name:c.name,printedName:c.name,
+    set:c._setName||'',setCode:c._setLabel||'',
+    number:c.id||'',
+    image:c.img_full_url||'',
+    price:null,lang:useJa?'ja':'en',
+    _opId:c.id
+  }));
 }
 
 async function searchScryfall(q,lang,limit,opts){
@@ -1397,6 +1487,17 @@ async function fetchCardInLang(card,lang){
       const img=c.card_images?.[0]?.image_url||c.card_images?.[0]?.image_url_small||'';
       if(!img)return null;
       return {name:c.name,image:img,set:card.set||''};
+    }catch(e){return null}
+  }
+  if(card.game==='onepiece'){
+    try{
+      const data=await loadOnePieceData();
+      const target=(lang==='ja')?data.ja:data.en;
+      if(!target)return null;
+      const id=card._opId||card.number||'';
+      const found=target.find(c=>c.id===id)||target.find(c=>(c.name||'').toLowerCase()===(card.name||'').toLowerCase());
+      if(!found||!found.img_full_url)return null;
+      return {name:found.name,image:found.img_full_url,set:found._setName||card.set||''};
     }catch(e){return null}
   }
   if(card.game==='pokemon'){
