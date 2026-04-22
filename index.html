@@ -311,6 +311,17 @@ img.err-hide{visibility:hidden}
             <button class="btn btn-primary" style="flex:0 0 auto;width:auto" data-act="doSearch">Chercher</button>
           </div>
         </div>
+        <div class="row">
+          <div class="field" style="flex:2">
+            <label>Extension (optionnel)</label>
+            <input id="searchSet" placeholder="ex: Dark Ascension, celebrations">
+          </div>
+          <div class="field" style="flex:1">
+            <label>N° (optionnel)</label>
+            <input id="searchNumber" placeholder="ex: 58">
+          </div>
+        </div>
+        <div class="hint" id="searchMeta"></div>
         <div id="searchResults" class="search-res"></div>
       </div>
     </section>
@@ -1106,7 +1117,7 @@ async function refreshPrice(id){
   const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
   try{
     showLoader('Mise à jour du prix…');
-    const res=await searchCards(c.game,c.name,c.lang||'en',1);
+    const res=await searchCards(c.game,c.name,c.lang||'en',3,{set:c.set||'',number:c.number||''});
     if(res.length>0&&res[0].price!=null){
       c.price=res[0].price;touchCard(c);saveLocal();scheduleSync();
       toast('Prix actualisé : '+fmtEur(c.price),'ok');
@@ -1148,46 +1159,84 @@ function renderAllCards(){
 }
 
 /* ==================== PRICE APIs ==================== */
-async function searchCards(game,name,lang,limit){
-  const q=name.trim();if(!q)return [];
-  lang=lang||'en';limit=limit||12;
-  if(game==='mtg')return searchScryfall(q,lang,limit);
-  if(game==='pokemon')return searchPokemon(q,lang,limit);
-  if(game==='yugioh')return searchYugioh(q,lang,limit);
-  return [{id:uid(),name:q,game,set:'',image:'',price:null,lang,_noPrice:true}];
+async function searchCards(game,name,lang,limit,opts){
+  const q=(name||'').trim();
+  opts=opts||{};
+  lang=lang||'en';limit=limit||60;
+  // Si rien n'est fourni → vide
+  if(!q && !opts.set && !opts.number)return [];
+  if(game==='mtg')return searchScryfall(q,lang,limit,opts);
+  if(game==='pokemon')return searchPokemon(q,lang,limit,opts);
+  if(game==='yugioh')return searchYugioh(q,lang,limit,opts);
+  return [{id:uid(),name:q,game,set:opts.set||'',image:'',price:null,lang,_noPrice:true}];
 }
 
-async function searchScryfall(q,lang,limit){
+async function searchScryfall(q,lang,limit,opts){
   const L=LANGS[lang]||LANGS.en;
-  const query=q+' lang:'+L.sf;
-  let r=await fetch('https://api.scryfall.com/cards/search?q='+encodeURIComponent(query)+'&unique=prints');
-  if(r.status===404&&lang!=='en'){
-    // Fallback : pas de résultat dans la langue → essai en EN
-    r=await fetch('https://api.scryfall.com/cards/search?q='+encodeURIComponent(q)+'&unique=prints');
-    if(!r.ok){if(r.status===404)return [];throw new Error('Scryfall HTTP '+r.status)}
-  } else if(!r.ok){
-    if(r.status===404)return [];throw new Error('Scryfall HTTP '+r.status);
+  opts=opts||{};
+  // Query construite avec filtres
+  const parts=[];
+  if(q)parts.push(q);
+  parts.push('lang:'+L.sf);
+  if(opts.set){
+    // Scryfall accepte set:CODE ou set:"nom"
+    const s=opts.set.trim();
+    parts.push(/^[a-z0-9]{2,5}$/i.test(s)?('set:'+s):('set:"'+s.replace(/"/g,'')+'"'));
   }
-  const j=await r.json();
-  return (j.data||[]).slice(0,limit).map(c=>{
-    const price=c.prices?.eur?parseFloat(c.prices.eur):(c.prices?.usd?parseFloat(c.prices.usd)*0.92:null);
-    return {
-      id:uid(),game:'mtg',
-      name:c.name, // nom EN canonique (pour le matching)
-      printedName:c.printed_name||c.name,
-      set:c.set_name,
-      image:c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'',
-      price:price!=null?Math.round(price*100)/100:null,
-      lang:c.lang||lang
-    };
-  });
+  if(opts.number)parts.push('cn:'+opts.number.trim());
+  const query=parts.join(' ');
+  // Pagination : on suit next_page jusqu'à limit
+  const all=[];
+  let url='https://api.scryfall.com/cards/search?q='+encodeURIComponent(query)+'&unique=prints&order=released';
+  let pages=0;
+  while(url && all.length<limit && pages<5){
+    let r=await fetch(url);
+    if(r.status===404){
+      if(lang!=='en' && pages===0){
+        // Fallback EN
+        const qEn=(q?q+' ':'')+(opts.set?(/^[a-z0-9]{2,5}$/i.test(opts.set)?('set:'+opts.set):('set:"'+opts.set.replace(/"/g,'')+'"'))+' ':'')+(opts.number?'cn:'+opts.number.trim():'');
+        url='https://api.scryfall.com/cards/search?q='+encodeURIComponent(qEn.trim())+'&unique=prints&order=released';
+        r=await fetch(url);
+        if(!r.ok){if(r.status===404)return all;throw new Error('Scryfall HTTP '+r.status)}
+      } else return all;
+    } else if(!r.ok){
+      if(r.status===404)return all;throw new Error('Scryfall HTTP '+r.status);
+    }
+    const j=await r.json();
+    (j.data||[]).forEach(c=>{
+      const price=c.prices?.eur?parseFloat(c.prices.eur):(c.prices?.usd?parseFloat(c.prices.usd)*0.92:null);
+      all.push({
+        id:uid(),game:'mtg',
+        name:c.name,
+        printedName:c.printed_name||c.name,
+        set:c.set_name,
+        setCode:c.set,
+        number:c.collector_number,
+        image:c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'',
+        price:price!=null?Math.round(price*100)/100:null,
+        lang:c.lang||lang
+      });
+    });
+    url=j.has_more?j.next_page:null;
+    pages++;
+  }
+  return all.slice(0,limit);
 }
 
-async function searchPokemon(q,lang,limit){
+async function searchPokemon(q,lang,limit,opts){
   const L=LANGS[lang]||LANGS.en;
-  // EN → pokemontcg.io (avec prix)
+  opts=opts||{};
+  // EN → pokemontcg.io (avec prix, syntaxe Lucene)
   if(lang==='en'){
-    const r=await fetch('https://api.pokemontcg.io/v2/cards?q=name:"'+encodeURIComponent(q)+'*"&pageSize='+limit);
+    const qParts=[];
+    if(q)qParts.push('name:"'+q.replace(/"/g,'')+'*"');
+    if(opts.set){
+      const s=opts.set.trim();
+      qParts.push(/^[a-z0-9]{2,6}$/i.test(s)?('set.id:'+s):('set.name:"'+s.replace(/"/g,'')+'*"'));
+    }
+    if(opts.number)qParts.push('number:"'+opts.number.trim()+'"');
+    if(qParts.length===0)return [];
+    const r=await fetch('https://api.pokemontcg.io/v2/cards?q='+encodeURIComponent(qParts.join(' '))+'&pageSize='+Math.min(limit,250));
     if(!r.ok)throw new Error('PokéTCG HTTP '+r.status);
     const j=await r.json();
     return (j.data||[]).map(c=>{
@@ -1195,15 +1244,44 @@ async function searchPokemon(q,lang,limit){
       const tp=c.tcgplayer?.prices;
       const tpMarket=tp?Object.values(tp)[0]?.market:null;
       const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',image:c.images?.small||c.images?.large||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
+      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
     });
   }
   // Autres langues → TCGdex
   if(!L.tcgdex)return [];
-  const r=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards?name='+encodeURIComponent(q));
+  // Si une extension est fournie → liste les cartes de l'extension
+  let url;
+  if(opts.set){
+    const s=opts.set.trim().toLowerCase();
+    // TCGdex utilise des IDs compacts (ex: cel25, swsh4…)
+    if(/^[a-z0-9-]{2,10}$/.test(s)){
+      url='https://api.tcgdex.net/v2/'+L.tcgdex+'/sets/'+s;
+    } else {
+      // fallback recherche par nom
+      url='https://api.tcgdex.net/v2/'+L.tcgdex+'/cards?name='+encodeURIComponent(q||'')+'&set.name='+encodeURIComponent(s);
+    }
+  } else {
+    url='https://api.tcgdex.net/v2/'+L.tcgdex+'/cards?name='+encodeURIComponent(q);
+  }
+  const r=await fetch(url);
   if(!r.ok)throw new Error('TCGdex HTTP '+r.status);
   const j=await r.json();
-  let arr=(Array.isArray(j)?j:[]);
+  let arr=[];
+  if(opts.set && j.cards){
+    // Réponse d'un set : {id,name,cards:[{id,localId,name,image}]}
+    arr=j.cards;
+    if(q){
+      const qq=q.toLowerCase();
+      arr=arr.filter(c=>(c.name||'').toLowerCase().includes(qq));
+    }
+  } else {
+    arr=Array.isArray(j)?j:[];
+  }
+  // Filtrage par n° si fourni
+  if(opts.number){
+    const n=String(opts.number).trim();
+    arr=arr.filter(c=>String(c.localId||'')===n || String(c.localId||'').replace(/^0+/,'')===n.replace(/^0+/,''));
+  }
   // Priorité aux cartes avec image localisée (brief)
   arr.sort((a,b)=>(b.image?1:0)-(a.image?1:0));
   arr=arr.slice(0,limit);
@@ -1250,23 +1328,43 @@ async function searchPokemon(q,lang,limit){
   return cards;
 }
 
-async function searchYugioh(q,lang,limit){
+async function searchYugioh(q,lang,limit,opts){
   const L=LANGS[lang]||LANGS.en;
-  const langParam=L.ygo?('&language='+L.ygo):'';
-  let r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname='+encodeURIComponent(q)+langParam);
+  opts=opts||{};
+  const params=[];
+  if(q)params.push('fname='+encodeURIComponent(q));
+  if(opts.set)params.push('cardset='+encodeURIComponent(opts.set.trim()));
+  if(L.ygo)params.push('language='+L.ygo);
+  if(params.length===0)return [];
+  let r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?'+params.join('&'));
   if(!r.ok){
     if(r.status===400)return [];
     // Fallback EN
-    if(langParam){
-      r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname='+encodeURIComponent(q));
+    if(L.ygo){
+      const pe=[];
+      if(q)pe.push('fname='+encodeURIComponent(q));
+      if(opts.set)pe.push('cardset='+encodeURIComponent(opts.set.trim()));
+      r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?'+pe.join('&'));
       if(!r.ok){if(r.status===400)return [];throw new Error('YGOPRODeck HTTP '+r.status)}
     } else throw new Error('YGOPRODeck HTTP '+r.status);
   }
   const j=await r.json();
-  return (j.data||[]).slice(0,limit).map(c=>{
+  let results=[];
+  (j.data||[]).forEach(c=>{
     const price=c.card_prices?.[0]?.cardmarket_price?parseFloat(c.card_prices[0].cardmarket_price):null;
-    return {id:uid(),game:'yugioh',name:c.name,printedName:c.name,set:c.card_sets?.[0]?.set_name||'',image:c.card_images?.[0]?.image_url_small||c.card_images?.[0]?.image_url||'',price,lang};
+    const image=c.card_images?.[0]?.image_url||c.card_images?.[0]?.image_url_small||'';
+    // Déplier les prints : une entrée par extension
+    const sets=c.card_sets||[];
+    if(sets.length===0){
+      results.push({id:uid(),game:'yugioh',name:c.name,printedName:c.name,set:'',setCode:'',number:'',image,price,lang,_ygoId:c.id});
+    } else {
+      sets.forEach(s=>{
+        if(opts.number && s.set_code && !s.set_code.includes(opts.number.trim()))return;
+        results.push({id:uid(),game:'yugioh',name:c.name,printedName:c.name,set:s.set_name||'',setCode:s.set_code||'',number:s.set_code||'',image,price,lang,_ygoId:c.id});
+      });
+    }
   });
+  return results.slice(0,limit);
 }
 
 /* Récupère le visuel d'une carte dans une langue donnée */
@@ -1386,21 +1484,29 @@ async function doSearch(){
   const game=document.getElementById('searchGame').value;
   const lang=document.getElementById('searchLang').value||'en';
   const name=document.getElementById('searchName').value.trim();
+  const setF=document.getElementById('searchSet').value.trim();
+  const numF=document.getElementById('searchNumber').value.trim();
   const box=document.getElementById('searchResults');
-  if(!name){box.innerHTML='';return}
+  const meta=document.getElementById('searchMeta');
+  if(!name && !setF && !numF){box.innerHTML='';if(meta)meta.textContent='';return}
   box.innerHTML='<div class="flex" style="justify-content:center;padding:20px"><div class="spinner"></div></div>';
+  if(meta)meta.textContent='';
   try{
-    const res=await searchCards(game,name,lang,15);
+    const res=await searchCards(game,name,lang,200,{set:setF,number:numF});
     _searchCache=res;
     if(res.length===0){box.innerHTML='<div class="empty"><div class="ic">😶</div><h3>Aucun résultat en '+(LANGS[lang]?.label||lang)+'</h3></div>';return}
+    if(meta)meta.textContent=res.length+' résultat'+(res.length>1?'s':'')+' — '+(LANGS[lang]?.label||lang);
     box.innerHTML=res.map((c,i)=>{
       const g=GAMES[c.game]||{};
       const displayName=c.printedName||c.name;
       const langBadge=c.lang?'<span class="chip" style="margin-left:6px;font-size:10px">'+(LANGS[c.lang]?.label||c.lang)+'</span>':'';
+      const setLine=[c.set||g.name];
+      if(c.number)setLine.push('#'+c.number);
+      if(c.setCode&&c.setCode!==c.set)setLine.push('['+c.setCode.toUpperCase()+']');
       return '<div class="card-row" data-act="pickSearchResult" data-args="'+esc(JSON.stringify([i]))+'">'
         +imgTag(c.image)
         +'<div class="info"><div class="nm">'+esc(displayName)+langBadge+'</div>'
-        +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(c.set||g.name)+'</div></div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(setLine.join(' • '))+'</div></div>'
         +'<div class="price">'+(c._noPrice?'Ajouter':fmtEur(c.price))+'</div></div>';
     }).join('');
   }catch(e){
@@ -1752,7 +1858,10 @@ document.getElementById('tabbar').addEventListener('click',e=>{
 document.getElementById('btnStartCam').addEventListener('click',startCamera);
 document.getElementById('btnCapture').addEventListener('click',captureCard);
 document.getElementById('filterCards').addEventListener('input',renderAllCards);
-document.getElementById('searchName').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
+['searchName','searchSet','searchNumber'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
+});
 document.getElementById('searchGame').addEventListener('change',refreshSearchLangs);
 refreshSearchLangs();
 
