@@ -202,19 +202,18 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 img.err-hide{visibility:hidden}
 
 /* ==================== DESKTOP / PC — pleine largeur ==================== */
-@media (min-width:900px){
-  #app{max-width:none;width:100%;padding-left:24px;padding-right:24px}
+@media (min-width:720px){
+  #app{max-width:none;width:100%}
   .topbar{padding:14px 28px}
   .topbar h1{font-size:22px}
-  main{padding:24px 28px 100px;max-width:1400px;margin:0 auto}
-  .tabbar{max-width:720px;border-radius:18px 18px 0 0;padding:10px 20px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.4)}
-  .tabbar button{min-width:90px;padding:8px 16px;font-size:12px}
+  main{padding:24px 28px 110px}
+  .tabbar{max-width:none;margin:0;padding:10px 0 calc(10px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.4);justify-content:center;gap:20px}
+  .tabbar button{min-width:100px;padding:8px 16px;font-size:12px}
   .tabbar button .ic{font-size:22px}
-  .coll-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+  .coll-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
   .coll-card{min-height:150px;padding:16px}
   .coll-card .cc-name{font-size:17px}
   .meta-grid{grid-template-columns:repeat(4,1fr)}
-  .compare-split{gap:14px}
   .avatar-grid{grid-template-columns:repeat(8,1fr)}
   .modal-backdrop{align-items:center}
   .modal{max-width:680px;border-radius:var(--radius-lg)}
@@ -224,9 +223,8 @@ img.err-hide{visibility:hidden}
   .card-row .nm{font-size:15px}
   .sync-status{max-width:220px;font-size:12px}
 }
-@media (min-width:1400px){
-  main{max-width:1600px}
-  .coll-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+@media (min-width:1100px){
+  .coll-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
 }
 </style>
 </head>
@@ -387,6 +385,19 @@ const GAMES = {
   onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️'}
 };
 const AVATARS=['🧙','🐉','🦊','🐺','🦅','🐲','🦁','🐯','🐱','🦄','🤖','🧛','⚔️','🛡️','🏹','🔮','🧝','👑','🎭','🃏','💎','🌟','⚡','🔥'];
+const LANGS={
+  en:{label:'🇬🇧 English',sf:'en',ygo:''},
+  fr:{label:'🇫🇷 Français',sf:'fr',ygo:'fr'},
+  de:{label:'🇩🇪 Deutsch',sf:'de',ygo:'de'},
+  it:{label:'🇮🇹 Italiano',sf:'it',ygo:'it'},
+  es:{label:'🇪🇸 Español',sf:'es',ygo:''},
+  pt:{label:'🇵🇹 Português',sf:'pt',ygo:'pt'},
+  ja:{label:'🇯🇵 日本語',sf:'ja',ygo:''},
+  ko:{label:'🇰🇷 한국어',sf:'ko',ygo:''},
+  ru:{label:'🇷🇺 Русский',sf:'ru',ygo:''},
+  zhs:{label:'🇨🇳 简体中文',sf:'zhs',ygo:''},
+  zht:{label:'🇹🇼 繁體中文',sf:'zht',ygo:''}
+};
 
 let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:''}};
 let CAM_STREAM=null;
@@ -1033,6 +1044,7 @@ function openCardDetail(cardId){
     +'<div class="meta-item"><div class="l">Jeu</div><div class="v">'+esc(g.name)+'</div></div>'
     +'<div class="meta-item"><div class="l">Extension</div><div class="v">'+esc(c.set||'—')+'</div></div>'
     +'<div class="meta-item"><div class="l">Quantité</div><div class="v">'+(c.quantity||1)+'</div></div>'
+    +'<div class="meta-item"><div class="l">Langue</div><div class="v">'+(LANGS[c.lang||'en']?.label||'🇬🇧 English')+'</div></div>'
     +'</div>'
     +'<div class="field"><label>Quantité</label><div class="row">'
     +'<button class="btn btn-ghost" data-act="adjQty" data-args="'+esc(JSON.stringify([c.id,-1]))+'">−</button>'
@@ -1040,6 +1052,16 @@ function openCardDetail(cardId){
     +'<button class="btn btn-ghost" data-act="adjQty" data-args="'+esc(JSON.stringify([c.id,1]))+'">+</button>'
     +'</div></div>'
     +'<div class="field"><label>Collection</label><select id="cd_coll">'+collOptions+'</select></div>'
+    +(c.game==='mtg'||c.game==='yugioh'
+      ? '<div class="field"><label>Langue de la carte</label><select id="cd_lang">'
+        +Object.entries(LANGS).map(([k,L])=>{
+          if(c.game==='yugioh'&&k!=='en'&&!L.ygo)return '';
+          return '<option value="'+k+'"'+((c.lang||'en')===k?' selected':'')+'>'+L.label+'</option>';
+        }).join('')
+        +'</select><div class="hint">Le visuel sera remplacé par la version dans cette langue.</div></div>'
+      : '<div class="field"><label>Langue de la carte</label><select id="cd_lang">'
+        +Object.entries(LANGS).map(([k,L])=>'<option value="'+k+'"'+((c.lang||'en')===k?' selected':'')+'>'+L.label+'</option>').join('')
+        +'</select><div class="hint">Langue enregistrée (visuel non remplacé pour ce jeu).</div></div>')
     +'<div class="row">'
     +'<button class="btn btn-primary" data-act="saveCardChanges" data-args="'+esc(JSON.stringify([c.id]))+'">💾 Sauver</button>'
     +'<button class="btn btn-ghost" data-act="refreshPrice" data-args="'+esc(JSON.stringify([c.id]))+'">🔄 MAJ prix</button>'
@@ -1059,6 +1081,14 @@ function adjQty(id,d){
 function saveCardChanges(id){
   const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
   c.collectionId=document.getElementById('cd_coll').value;
+  const langSel=document.getElementById('cd_lang');
+  const newLang=langSel?langSel.value:(c.lang||'en');
+  const oldLang=c.lang||'en';
+  if(newLang!==oldLang){
+    // Trigger language change (async fetch + refresh modal)
+    changeCardLanguage(id,newLang);
+    return;
+  }
   touchCard(c);
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Sauvé ✓','ok');
 }
@@ -1148,6 +1178,64 @@ async function searchYugioh(q,limit){
     const price=c.card_prices?.[0]?.cardmarket_price?parseFloat(c.card_prices[0].cardmarket_price):null;
     return {id:uid(),game:'yugioh',name:c.name,set:c.card_sets?.[0]?.set_name||'',image:c.card_images?.[0]?.image_url_small||c.card_images?.[0]?.image_url||'',price};
   });
+}
+
+/* Récupère le visuel d'une carte dans une langue donnée */
+async function fetchCardInLang(card,lang){
+  const L=LANGS[lang];if(!L)return null;
+  if(card.game==='mtg'){
+    const tryQ=async q=>{
+      const r=await fetch('https://api.scryfall.com/cards/search?q='+encodeURIComponent(q)+'&unique=prints');
+      if(!r.ok)return null;
+      const j=await r.json();
+      const c=j.data?.[0];if(!c)return null;
+      const img=c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'';
+      if(!img)return null;
+      return {name:c.printed_name||c.name,image:img,set:c.set_name||card.set||''};
+    };
+    try{
+      let res=await tryQ('!"'+card.name.replace(/"/g,'')+'" lang:'+L.sf+(card.set?' set:"'+card.set.replace(/"/g,'')+'"':''));
+      if(!res)res=await tryQ('!"'+card.name.replace(/"/g,'')+'" lang:'+L.sf);
+      if(!res&&lang!=='en')res=await tryQ('"'+card.name.replace(/"/g,'')+'" lang:'+L.sf);
+      return res;
+    }catch(e){return null}
+  }
+  if(card.game==='yugioh'){
+    try{
+      const langParam=L.ygo?('&language='+L.ygo):'';
+      const r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?fname='+encodeURIComponent(card.name)+langParam);
+      if(!r.ok)return null;
+      const j=await r.json();
+      const c=j.data?.[0];if(!c)return null;
+      const img=c.card_images?.[0]?.image_url||c.card_images?.[0]?.image_url_small||'';
+      if(!img)return null;
+      return {name:c.name,image:img,set:card.set||''};
+    }catch(e){return null}
+  }
+  return null;
+}
+
+async function changeCardLanguage(cardId,lang){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===cardId);if(!c)return;
+  if((c.lang||'en')===lang&&c.image)return;
+  try{
+    showLoader('Chargement du visuel '+(LANGS[lang]?.label||lang)+'…');
+    const res=await fetchCardInLang(c,lang);
+    if(res){
+      c.image=res.image;
+      if(res.name)c.printedName=res.name;
+      c.lang=lang;
+      touchCard(c);
+      saveLocal();scheduleSync();
+      toast('Langue : '+(LANGS[lang]?.label||lang),'ok');
+      openCardDetail(cardId);
+    } else {
+      c.lang=lang;touchCard(c);saveLocal();scheduleSync();
+      toast('Visuel indisponible — langue enregistrée','err');
+      openCardDetail(cardId);
+    }
+  }catch(e){toast('Erreur: '+e.message,'err')}
+  finally{hideLoader()}
 }
 
 async function doSearch(){
@@ -1463,7 +1551,7 @@ function bootApp(){
 registerActions({
   pickProfile,openNewProfile,openJoinGist,closeModal,switchProfile,
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
-  openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,
+  openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,
   switchView
