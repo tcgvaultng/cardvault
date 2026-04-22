@@ -350,8 +350,40 @@ let _gameFilter='all';
 let _syncTimer=null;
 
 /* ==================== UTILS ==================== */
-function saveLocal(){try{localStorage.setItem('cardvault_state',JSON.stringify(STATE))}catch(e){}}
-function loadLocal(){try{const r=localStorage.getItem('cardvault_state');if(r){const p=JSON.parse(r);STATE=Object.assign(STATE,p);if(!STATE.users)STATE.users={};if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''}}}catch(e){}}
+function saveLocal(){
+  try{
+    localStorage.setItem('cardvault_state',JSON.stringify(STATE));
+    localStorage.setItem('cardvault_state_backup',JSON.stringify(STATE));
+  }catch(e){console.error('saveLocal failed:',e);toast('⚠️ Sauvegarde locale échouée','err')}
+}
+function loadLocal(){
+  try{
+    let r=localStorage.getItem('cardvault_state');
+    if(!r)r=localStorage.getItem('cardvault_state_backup');
+    if(r){
+      const p=JSON.parse(r);
+      STATE=Object.assign(STATE,p);
+      if(!STATE.users)STATE.users={};
+      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''};
+      else{
+        if(STATE.config.githubToken==null)STATE.config.githubToken='';
+        if(STATE.config.gistId==null)STATE.config.gistId='';
+        if(STATE.config.geminiKey==null)STATE.config.geminiKey='';
+      }
+    }
+  }catch(e){console.error('loadLocal failed:',e)}
+}
+async function requestPersistentStorage(){
+  try{
+    if(navigator.storage&&navigator.storage.persist){
+      const already=await navigator.storage.persisted();
+      if(!already){
+        const granted=await navigator.storage.persist();
+        console.log('Persistent storage granted:',granted);
+      }
+    }
+  }catch(e){console.warn('persist() failed:',e)}
+}
 function uid(){return Math.random().toString(36).slice(2,11)+Date.now().toString(36)}
 function fmtEur(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -457,14 +489,17 @@ function openNewProfile(){
 
 function openJoinGist(){
   openModal('Rejoindre un Gist',
-    '<p class="muted mb-14">Entrez l\'ID du Gist partagé. Pas besoin de token GitHub si le Gist est public.</p>'
+    '<p class="muted mb-14">Entrez l\'ID du Gist partagé et le token GitHub reçu du propriétaire (nécessaire pour écrire dans le Gist).</p>'
     +'<div class="field"><label>Gist ID</label><input id="jg_id" placeholder="ex: 8a4f..."></div>'
+    +'<div class="field"><label>Token GitHub (optionnel en lecture seule)</label><input id="jg_token" type="password" placeholder="github_pat_... ou vide"></div>'
     +'<button class="btn btn-primary btn-block" id="jg_ok">Se connecter au Gist</button>'
     +'<div id="jg_err" class="hint" style="color:var(--red);margin-top:10px"></div>',
     ()=>{
       document.getElementById('jg_ok').addEventListener('click',async()=>{
         const id=document.getElementById('jg_id').value.trim();
+        const tok=document.getElementById('jg_token').value.trim();
         if(!id){document.getElementById('jg_err').textContent='ID requis';return}
+        if(tok)STATE.config.githubToken=tok;
         try{
           showLoader('Connexion au Gist…');
           const data=await fetchGist(id);
@@ -472,6 +507,9 @@ function openJoinGist(){
           if(data&&data.users){
             STATE.users=Object.assign(STATE.users||{},data.users);
             STATE.config.gistId=id;
+            if(data.sharedConfig&&data.sharedConfig.geminiKey&&!STATE.config.geminiKey){
+              STATE.config.geminiKey=data.sharedConfig.geminiKey;
+            }
             saveLocal();
             closeModal();
             renderLaunch();
@@ -527,7 +565,8 @@ async function fetchGist(id){
 
 async function createGist(){
   if(!STATE.config.githubToken)throw new Error('Token GitHub manquant');
-  const body={description:'CardVault — TCG collection (multi-users)',public:false,files:{[GIST_FILE]:{content:JSON.stringify({version:4,users:STATE.users,updatedAt:Date.now()},null,2)}}};
+  const sharedConfig={geminiKey:STATE.config.geminiKey||''};
+  const body={description:'CardVault — TCG collection (multi-users)',public:false,files:{[GIST_FILE]:{content:JSON.stringify({version:5,users:STATE.users,sharedConfig,updatedAt:Date.now()},null,2)}}};
   const r=await fetch('https://api.github.com/gists',{method:'POST',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -536,7 +575,8 @@ async function createGist(){
 
 async function updateGist(){
   if(!STATE.config.githubToken||!STATE.config.gistId)throw new Error('Token ou Gist ID manquant');
-  const body={files:{[GIST_FILE]:{content:JSON.stringify({version:4,users:STATE.users,updatedAt:Date.now()},null,2)}}};
+  const sharedConfig={geminiKey:STATE.config.geminiKey||''};
+  const body={files:{[GIST_FILE]:{content:JSON.stringify({version:5,users:STATE.users,sharedConfig,updatedAt:Date.now()},null,2)}}};
   const r=await fetch('https://api.github.com/gists/'+STATE.config.gistId,{method:'PATCH',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw new Error('HTTP '+r.status);
   return true;
@@ -551,6 +591,9 @@ async function pullGist(){
       merged[STATE.activeUser]=STATE.users[STATE.activeUser];
     }
     STATE.users=merged;
+    if(data.sharedConfig&&data.sharedConfig.geminiKey&&!STATE.config.geminiKey){
+      STATE.config.geminiKey=data.sharedConfig.geminiKey;
+    }
     saveLocal();
     return true;
   }
@@ -1213,6 +1256,7 @@ document.getElementById('searchName').addEventListener('keydown',e=>{if(e.key===
 
 /* ==================== INIT ==================== */
 loadLocal();
+requestPersistentStorage();
 if(STATE.activeUser&&STATE.users[STATE.activeUser]){bootApp()}
 else{renderLaunch()}
 </script>
