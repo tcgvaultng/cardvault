@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CardVault">
 <meta name="mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>CardVault — TCG Collection Manager</title>
 
 <link rel="manifest" href='data:application/manifest+json,{"name":"CardVault","short_name":"CardVault","start_url":".","scope":".","display":"standalone","orientation":"portrait","background_color":"%230b0618","theme_color":"%230b0618","icons":[{"src":"data:image/svg%2Bxml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2232%22 fill=%22%230b0618%22/%3E%3Crect x=%2248%22 y=%2236%22 width=%2296%22 height=%22128%22 rx=%2212%22 fill=%22%23c9a04b%22/%3E%3Crect x=%2258%22 y=%2246%22 width=%2276%22 height=%22108%22 rx=%228%22 fill=%22%230b0618%22/%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml","purpose":"any maskable"}]}'>
@@ -44,6 +47,16 @@ label{display:block;font-size:.82em;color:var(--text-dim);margin-bottom:6px;text
 .user-chip{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px 10px 4px 4px;cursor:pointer}
 .user-chip .av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gold),var(--violet));font-size:14px;color:#fff}
 .user-chip .nm{font-size:13px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sync-indicator{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);min-width:0}
+.sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;flex-shrink:0}
+.sync-dot.ok{background:#4ade80;box-shadow:0 0 6px #4ade80}
+.sync-dot.pending{background:#fbbf24;animation:pulse 1.2s infinite}
+.sync-dot.err{background:#ef4444;box-shadow:0 0 6px #ef4444}
+.sync-status{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sync-status.ok{color:#4ade80}
+.sync-status.pending{color:#fbbf24}
+.sync-status.err{color:#ef4444}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:30;background:rgba(11,6,24,.95);backdrop-filter:blur(14px);border-top:1px solid var(--border);display:flex;justify-content:space-around;padding:8px 0 calc(8px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
 .tabbar button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;color:var(--text-mute);font-size:11px;border-radius:10px;min-width:58px}
@@ -209,6 +222,10 @@ img.err-hide{visibility:hidden}
       <div class="av" id="userAv">?</div>
       <div class="nm" id="userNm">—</div>
     </div>
+    <div class="sync-indicator" title="Statut de synchronisation">
+      <span id="syncDot" class="sync-dot"></span>
+      <span id="syncStatus" class="sync-status"></span>
+    </div>
   </div>
 
   <main>
@@ -302,7 +319,8 @@ img.err-hide{visibility:hidden}
           <button class="btn btn-primary" data-act="saveTokenAndSync">💾 Sauver & Sync</button>
           <button class="btn btn-ghost" data-act="shareGistId">📋 Copier ID</button>
         </div>
-        <div id="syncStatus" class="hint mt-10"></div>
+        <button class="btn btn-violet btn-block mt-10" data-act="openAddDevice">📱 Ajouter un appareil</button>
+        <div id="cfgSyncStatus" class="hint mt-10"></div>
       </div>
       <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
@@ -315,7 +333,7 @@ img.err-hide{visibility:hidden}
       </div>
       <div class="panel">
         <div class="panel-title">ℹ️ À propos</div>
-        <div class="muted">CardVault v4 — PWA multi-utilisateurs</div>
+        <div class="muted" id="aboutVersion">CardVault v2.0 — PWA multi-utilisateurs</div>
         <div class="muted" style="font-size:12px;margin-top:6px">Scryfall • PokéTCG • YGOPRODeck • Gemini 2.5 Flash • GitHub Gist</div>
         <button class="btn btn-danger btn-block mt-10" data-act="resetApp">🗑️ Réinitialiser l'app</button>
       </div>
@@ -369,6 +387,14 @@ function loadLocal(){
         if(STATE.config.githubToken==null)STATE.config.githubToken='';
         if(STATE.config.gistId==null)STATE.config.gistId='';
         if(STATE.config.geminiKey==null)STATE.config.geminiKey='';
+      }
+      /* Migration v5 → v6 : chaque profil et chaque carte a un updatedAt */
+      const now=Date.now();
+      for(const pseudo in STATE.users){
+        const u=STATE.users[pseudo];
+        if(!u.updatedAt)u.updatedAt=u.createdAt||now;
+        if(u.cards)for(const c of u.cards){if(!c.updatedAt)c.updatedAt=c.addedAt||now}
+        if(u.collections)for(const col of u.collections){if(!col.updatedAt)col.updatedAt=col.createdAt||now}
       }
     }
   }catch(e){console.error('loadLocal failed:',e)}
@@ -505,12 +531,13 @@ function openJoinGist(){
           const data=await fetchGist(id);
           hideLoader();
           if(data&&data.users){
-            STATE.users=Object.assign(STATE.users||{},data.users);
+            STATE.users=mergeUsers(STATE.users||{},data.users);
             STATE.config.gistId=id;
             if(data.sharedConfig&&data.sharedConfig.geminiKey&&!STATE.config.geminiKey){
               STATE.config.geminiKey=data.sharedConfig.geminiKey;
             }
             saveLocal();
+            startAutoSync();
             closeModal();
             renderLaunch();
             toast('Gist connecté : '+Object.keys(data.users).length+' profil(s)','ok');
@@ -532,6 +559,56 @@ function switchProfile(){
   renderLaunch();
 }
 
+/* ==================== DEVICE PAIRING ==================== */
+function buildPairUrl(){
+  const payload={g:STATE.config.gistId||'',t:STATE.config.githubToken||'',k:STATE.config.geminiKey||''};
+  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const base=location.origin+location.pathname;
+  return base+'#setup='+b64;
+}
+
+function openAddDevice(){
+  if(!STATE.config.gistId){
+    toast('Configurez d\'abord votre Gist','err');
+    switchView('config');
+    return;
+  }
+  const url=buildPairUrl();
+  const qrSrc='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data='+encodeURIComponent(url);
+  openModal('📱 Ajouter un appareil',
+    '<p class="muted mb-14">Scannez le QR code avec votre autre appareil, ou copiez le lien. Vos collections, cartes et clés seront synchronisées automatiquement.</p>'
+    +'<div style="text-align:center;margin:16px 0"><img src="'+qrSrc+'" alt="QR" style="background:#fff;padding:10px;border-radius:12px;max-width:100%;width:240px"></div>'
+    +'<div class="field"><label>Lien de jumelage</label><input id="pair_url" readonly value="'+esc(url)+'" onclick="this.select()"></div>'
+    +'<div class="row"><button class="btn btn-primary" id="pair_copy">📋 Copier le lien</button>'
+    +'<button class="btn btn-ghost" data-act="closeModal">Fermer</button></div>'
+    +'<div class="hint mt-10" style="color:#fbbf24">⚠️ Ce lien contient votre token GitHub. Ne le partagez qu\'avec vos propres appareils.</div>',
+    ()=>{
+      document.getElementById('pair_copy').addEventListener('click',async()=>{
+        try{await navigator.clipboard.writeText(url);toast('Lien copié ✓','ok')}
+        catch(_){document.getElementById('pair_url').select();document.execCommand('copy');toast('Lien copié ✓','ok')}
+      });
+    });
+}
+
+function tryParseSetupUrl(){
+  const h=(location.hash||'').replace(/^#/,'');
+  if(!h.startsWith('setup='))return false;
+  try{
+    const b64=h.slice(6);
+    const json=decodeURIComponent(escape(atob(b64)));
+    const p=JSON.parse(json);
+    if(p.g)STATE.config.gistId=p.g;
+    if(p.t)STATE.config.githubToken=p.t;
+    if(p.k)STATE.config.geminiKey=p.k;
+    saveLocal();
+    history.replaceState(null,'',location.pathname+location.search);
+    return true;
+  }catch(e){
+    console.warn('setup parse failed',e);
+    return false;
+  }
+}
+
 /* ==================== TABS ==================== */
 function switchView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -547,8 +624,63 @@ function switchView(name){
   if(name!=='add'&&CAM_STREAM)stopCamera();
 }
 
-/* ==================== GIST SYNC ==================== */
+/* ==================== GIST SYNC (v6 — merge par timestamp) ==================== */
 const GIST_FILE='cardvault.json';
+const GIST_VERSION=6;
+const APP_VERSION='2.0.0';
+const SYNC_INTERVAL_MS=20000;
+let _pullInFlight=null;
+let _lastSyncAt=0;
+let _autoSyncTimer=null;
+
+/* Merge per-user, per-card — dernière modif gagne */
+function mergeUsers(L,R){
+  const out={};
+  const all=new Set([...Object.keys(L||{}),...Object.keys(R||{})]);
+  for(const p of all){
+    const a=L?.[p],b=R?.[p];
+    if(!a){out[p]=b;continue}
+    if(!b){out[p]=a;continue}
+    out[p]=mergeOneUser(a,b);
+  }
+  return out;
+}
+function mergeOneUser(a,b){
+  const at=a.updatedAt||0,bt=b.updatedAt||0;
+  const newer=bt>at?b:a;
+  return {
+    avatar:newer.avatar||a.avatar||b.avatar||'🃏',
+    createdAt:Math.min(a.createdAt||Date.now(),b.createdAt||Date.now()),
+    updatedAt:Math.max(at,bt),
+    collections:mergeById(a.collections||[],b.collections||[]),
+    cards:mergeCards(a.cards||[],b.cards||[])
+  };
+}
+function mergeById(A,B){
+  const m=new Map();
+  for(const x of A)m.set(x.id,x);
+  for(const y of B){
+    const ex=m.get(y.id);
+    if(!ex){m.set(y.id,y);continue}
+    m.set(y.id,(y.updatedAt||0)>=(ex.updatedAt||0)?y:ex);
+  }
+  return Array.from(m.values());
+}
+function cardKey(c){return (c.game||'')+':::'+((c.name||'').toLowerCase())+':::'+((c.set||'').toLowerCase())+':::'+(c.collectionId||'')}
+function mergeCards(A,B){
+  const m=new Map();
+  for(const x of A)m.set(cardKey(x),x);
+  for(const y of B){
+    const k=cardKey(y),ex=m.get(k);
+    if(!ex){m.set(k,y);continue}
+    const yt=y.updatedAt||y.addedAt||0;
+    const et=ex.updatedAt||ex.addedAt||0;
+    m.set(k,yt>=et?y:ex);
+  }
+  return Array.from(m.values());
+}
+function touchActiveUser(){const u=STATE.users[STATE.activeUser];if(u)u.updatedAt=Date.now()}
+function touchCard(c){c.updatedAt=Date.now();touchActiveUser()}
 
 async function fetchGist(id){
   const headers={};
@@ -563,10 +695,13 @@ async function fetchGist(id){
   try{return JSON.parse(c)}catch(e){return null}
 }
 
+function buildPayload(){
+  return {version:GIST_VERSION,appVersion:APP_VERSION,users:STATE.users,sharedConfig:{geminiKey:STATE.config.geminiKey||''},updatedAt:Date.now()};
+}
+
 async function createGist(){
   if(!STATE.config.githubToken)throw new Error('Token GitHub manquant');
-  const sharedConfig={geminiKey:STATE.config.geminiKey||''};
-  const body={description:'CardVault — TCG collection (multi-users)',public:false,files:{[GIST_FILE]:{content:JSON.stringify({version:5,users:STATE.users,sharedConfig,updatedAt:Date.now()},null,2)}}};
+  const body={description:'CardVault — TCG collection (multi-users, v'+GIST_VERSION+')',public:false,files:{[GIST_FILE]:{content:JSON.stringify(buildPayload(),null,2)}}};
   const r=await fetch('https://api.github.com/gists',{method:'POST',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -575,40 +710,83 @@ async function createGist(){
 
 async function updateGist(){
   if(!STATE.config.githubToken||!STATE.config.gistId)throw new Error('Token ou Gist ID manquant');
-  const sharedConfig={geminiKey:STATE.config.geminiKey||''};
-  const body={files:{[GIST_FILE]:{content:JSON.stringify({version:5,users:STATE.users,sharedConfig,updatedAt:Date.now()},null,2)}}};
+  /* Pull-avant-push : évite d'écraser les modifs d'un autre appareil */
+  try{
+    const remote=await fetchGist(STATE.config.gistId);
+    if(remote&&remote.users){
+      STATE.users=mergeUsers(STATE.users,remote.users);
+      if(remote.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=remote.sharedConfig.geminiKey;
+    }
+  }catch(_){}
+  const body={files:{[GIST_FILE]:{content:JSON.stringify(buildPayload(),null,2)}}};
   const r=await fetch('https://api.github.com/gists/'+STATE.config.gistId,{method:'PATCH',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok)throw new Error('HTTP '+r.status);
+  saveLocal();
   return true;
 }
 
 async function pullGist(){
   if(!STATE.config.gistId)return false;
-  const data=await fetchGist(STATE.config.gistId);
-  if(data&&data.users){
-    const merged=Object.assign({},data.users);
-    if(STATE.activeUser&&STATE.users[STATE.activeUser]){
-      merged[STATE.activeUser]=STATE.users[STATE.activeUser];
-    }
-    STATE.users=merged;
-    if(data.sharedConfig&&data.sharedConfig.geminiKey&&!STATE.config.geminiKey){
-      STATE.config.geminiKey=data.sharedConfig.geminiKey;
-    }
-    saveLocal();
-    return true;
-  }
-  return false;
+  if(_pullInFlight)return _pullInFlight;
+  _pullInFlight=(async()=>{
+    try{
+      const data=await fetchGist(STATE.config.gistId);
+      if(data&&data.users){
+        STATE.users=mergeUsers(STATE.users,data.users);
+        if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
+        saveLocal();
+        return true;
+      }
+      return false;
+    }finally{_pullInFlight=null}
+  })();
+  return _pullInFlight;
 }
 
 function scheduleSync(){
-  if(!STATE.config.githubToken||!STATE.config.gistId)return;
+  if(!STATE.config.githubToken||!STATE.config.gistId){setSyncStatus(STATE.config.gistId?'👁 Lecture seule':'');return}
   clearTimeout(_syncTimer);
+  setSyncStatus('⏳ Envoi…','pending');
   _syncTimer=setTimeout(async()=>{
-    try{await updateGist();setSyncStatus('✅ Synchronisé '+new Date().toLocaleTimeString('fr-FR'))}
-    catch(e){setSyncStatus('⚠️ '+e.message)}
-  },1200);
+    try{
+      await updateGist();
+      _lastSyncAt=Date.now();
+      setSyncStatus('✓ Sync '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),'ok');
+      if(document.querySelector('.view.active')?.id==='view-compare')renderCompare();
+    }catch(e){
+      setSyncStatus('⚠️ '+e.message,'err');
+      setTimeout(()=>scheduleSync(),10000);
+    }
+  },800);
 }
-function setSyncStatus(t){const el=document.getElementById('syncStatus');if(el)el.textContent=t}
+
+function setSyncStatus(t,kind=''){
+  const el=document.getElementById('syncStatus');if(el){el.textContent=t;el.className='sync-status '+kind}
+  const dot=document.getElementById('syncDot');if(dot)dot.className='sync-dot '+kind;
+}
+
+async function autoPull(){
+  if(!STATE.config.gistId||document.hidden)return;
+  try{
+    const ok=await pullGist();
+    if(ok){
+      const vid=document.querySelector('.view.active')?.id;
+      if(vid==='view-collections')renderCollections();
+      else if(vid==='view-cards')renderAllCards();
+      else if(vid==='view-compare')renderCompare();
+      updateHeader&&updateHeader();
+      _lastSyncAt=Date.now();
+      setSyncStatus('✓ Sync '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),'ok');
+    }
+  }catch(e){/* silencieux */}
+}
+
+function startAutoSync(){
+  if(_autoSyncTimer)clearInterval(_autoSyncTimer);
+  _autoSyncTimer=setInterval(autoPull,SYNC_INTERVAL_MS);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoPull()});
+  window.addEventListener('focus',autoPull);
+}
 
 async function saveTokenAndSync(){
   const token=document.getElementById('cfgToken').value.trim();
@@ -624,20 +802,21 @@ async function saveTokenAndSync(){
       STATE.config.gistId=id;
       document.getElementById('cfgGistId').value=id;
       saveLocal();
-      setSyncStatus('✅ Gist créé : '+id);
+      startAutoSync();
+      setSyncStatus('✅ Gist créé : '+id,'ok');
       toast('Gist créé ✓','ok');
     } else {
       try{
         const data=await fetchGist(STATE.config.gistId);
         if(data&&data.users){
-          const merged=Object.assign({},data.users);
-          if(STATE.activeUser)merged[STATE.activeUser]=STATE.users[STATE.activeUser]||merged[STATE.activeUser]||{collections:[],cards:[]};
-          STATE.users=merged;
+          STATE.users=mergeUsers(STATE.users,data.users);
+          if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
           saveLocal();
         }
       }catch(_){}
       await updateGist();
-      setSyncStatus('✅ Synchronisé '+new Date().toLocaleTimeString('fr-FR'));
+      startAutoSync();
+      setSyncStatus('✅ Synchronisé '+new Date().toLocaleTimeString('fr-FR'),'ok');
       toast('Synchronisé ✓','ok');
     }
   }catch(e){
@@ -721,7 +900,9 @@ function openNewCollection(){
         const name=document.getElementById('nc_name').value.trim();
         if(!name){toast('Nom requis','err');return}
         const u=getUser();
-        u.collections.push({id:uid(),name,color:sel,createdAt:Date.now()});
+        const now=Date.now();
+        u.collections.push({id:uid(),name,color:sel,createdAt:now,updatedAt:now});
+        touchActiveUser();
         saveLocal();
         scheduleSync();
         closeModal();
@@ -773,7 +954,7 @@ function openCollection(cid){
 function renameCollection(cid){
   const u=getUser();const c=u.collections.find(x=>x.id===cid);if(!c)return;
   const nm=prompt('Nouveau nom :',c.name);
-  if(nm&&nm.trim()){c.name=nm.trim();saveLocal();scheduleSync();closeModal();renderCollections();toast('Renommé ✓','ok')}
+  if(nm&&nm.trim()){c.name=nm.trim();c.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();closeModal();renderCollections();toast('Renommé ✓','ok')}
 }
 
 function deleteCollection(cid){
@@ -781,6 +962,7 @@ function deleteCollection(cid){
   const u=getUser();
   u.collections=u.collections.filter(x=>x.id!==cid);
   u.cards=(u.cards||[]).filter(c=>c.collectionId!==cid);
+  touchActiveUser();
   saveLocal();scheduleSync();closeModal();renderCollections();toast('Supprimée ✓','ok');
 }
 
@@ -841,6 +1023,7 @@ function openCardDetail(cardId){
 function adjQty(id,d){
   const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
   c.quantity=Math.max(1,(c.quantity||1)+d);
+  touchCard(c);
   const inp=document.getElementById('qty_'+id);if(inp)inp.value=c.quantity;
   saveLocal();scheduleSync();
 }
@@ -848,6 +1031,7 @@ function adjQty(id,d){
 function saveCardChanges(id){
   const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
   c.collectionId=document.getElementById('cd_coll').value;
+  touchCard(c);
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Sauvé ✓','ok');
 }
 
@@ -857,7 +1041,7 @@ async function refreshPrice(id){
     showLoader('Mise à jour du prix…');
     const res=await searchCards(c.game,c.name,1);
     if(res.length>0&&res[0].price!=null){
-      c.price=res[0].price;saveLocal();scheduleSync();
+      c.price=res[0].price;touchCard(c);saveLocal();scheduleSync();
       toast('Prix actualisé : '+fmtEur(c.price),'ok');
       openCardDetail(id);
     } else toast('Prix non trouvé','err');
@@ -869,6 +1053,7 @@ function deleteCard(id){
   if(!confirm('Supprimer cette carte ?'))return;
   const u=getUser();
   u.cards=(u.cards||[]).filter(c=>c.id!==id);
+  touchActiveUser();
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Supprimée ✓','ok');
 }
 
@@ -993,9 +1178,12 @@ function chooseCollectionAndAdd(card){
         if(existing){
           existing.quantity=(existing.quantity||1)+qty;
           if(price!=null)existing.price=price;
+          touchCard(existing);
           toast('Quantité mise à jour ✓','ok');
         } else {
-          u.cards.push({id:uid(),collectionId:cid,name:card.name,game:card.game,set:card.set||'',image:card.image||'',price,quantity:qty,addedAt:Date.now()});
+          const now=Date.now();
+          u.cards.push({id:uid(),collectionId:cid,name:card.name,game:card.game,set:card.set||'',image:card.image||'',price,quantity:qty,addedAt:now,updatedAt:now});
+          touchActiveUser();
           toast('Carte ajoutée ✓','ok');
         }
         saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
@@ -1230,7 +1418,16 @@ function bootApp(){
   updateHeader();
   renderCollections();
   if(STATE.config.gistId){
-    pullGist().then(ok=>{if(ok)renderCollections()}).catch(()=>{});
+    setSyncStatus('⏳ Pull…','pending');
+    pullGist().then(ok=>{
+      if(ok){
+        renderCollections();
+        setSyncStatus('✓ Sync '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),'ok');
+      } else {
+        setSyncStatus(STATE.config.githubToken?'':'👁 Lecture seule');
+      }
+    }).catch(()=>{setSyncStatus('⚠️ Offline','err')});
+    startAutoSync();
   }
 }
 
@@ -1240,7 +1437,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,
+  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,
   switchView
 });
 
@@ -1257,7 +1454,22 @@ document.getElementById('searchName').addEventListener('keydown',e=>{if(e.key===
 /* ==================== INIT ==================== */
 loadLocal();
 requestPersistentStorage();
-if(STATE.activeUser&&STATE.users[STATE.activeUser]){bootApp()}
+const _paired=tryParseSetupUrl();
+if(_paired){
+  toast('📱 Appareil jumelé — synchronisation…','ok');
+  (async()=>{
+    try{
+      const data=await fetchGist(STATE.config.gistId);
+      if(data&&data.users){
+        STATE.users=mergeUsers(STATE.users||{},data.users);
+        if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
+        saveLocal();
+      }
+    }catch(e){toast('Sync échoué: '+e.message,'err')}
+    renderLaunch();
+    startAutoSync();
+  })();
+} else if(STATE.activeUser&&STATE.users[STATE.activeUser]){bootApp()}
 else{renderLaunch()}
 </script>
 </body>
