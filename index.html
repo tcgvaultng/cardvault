@@ -1200,36 +1200,48 @@ async function searchPokemon(q,lang,limit){
   const r=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards?name='+encodeURIComponent(q));
   if(!r.ok)throw new Error('TCGdex HTTP '+r.status);
   const j=await r.json();
-  const arr=(Array.isArray(j)?j:[]).slice(0,limit);
-  // Fetch détail + prix en // (best-effort)
+  let arr=(Array.isArray(j)?j:[]);
+  // Priorité aux cartes avec image (dispo direct dans le brief)
+  arr.sort((a,b)=>(b.image?1:0)-(a.image?1:0));
+  arr=arr.slice(0,limit*2); // On prend plus large, on filtrera ensuite
   const results=await Promise.all(arr.map(async c=>{
     let image=c.image?c.image+'/high.webp':'';
     let setName='';
-    try{
-      const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+c.id);
-      if(rd.ok){
-        const d=await rd.json();
-        if(d.image)image=d.image+'/high.webp';
-        setName=d.set?.name||'';
-      }
-    }catch(_){}
-    // Prix via pokemontcg.io (EN) en utilisant l'ID canonique (souvent compatible)
+    let fullName=c.name;
+    // Si pas d'image dans le brief → tente le détail
+    if(!image){
+      try{
+        const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+c.id);
+        if(rd.ok){
+          const d=await rd.json();
+          if(d.image)image=d.image+'/high.webp';
+          setName=d.set?.name||'';
+          fullName=d.name||c.name;
+        }
+      }catch(_){}
+    }
+    // Prix via pokemontcg.io (best-effort pour les 6 premiers seulement)
     let price=null;
+    return {id:uid(),game:'pokemon',name:fullName,printedName:fullName,set:setName,image,price,lang,_pokeId:c.id};
+  }));
+  // On garde seulement les cartes AVEC image pour éviter les previews vides
+  const withImg=results.filter(x=>x.image).slice(0,limit);
+  // Enrichissement prix en parallèle (non-bloquant pour l'affichage)
+  await Promise.all(withImg.slice(0,8).map(async card=>{
     try{
-      const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(c.id));
+      const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(card._pokeId));
       if(rp.ok){
         const jp=await rp.json();
         const cm=jp.data?.cardmarket?.prices;
         const tp=jp.data?.tcgplayer?.prices;
         const tpMarket=tp?Object.values(tp)[0]?.market:null;
-        price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-        if(price!=null)price=Math.round(price*100)/100;
-        if(!setName)setName=jp.data?.set?.name||'';
+        let p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
+        if(p!=null)card.price=Math.round(p*100)/100;
+        if(!card.set&&jp.data?.set?.name)card.set=jp.data.set.name;
       }
     }catch(_){}
-    return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:setName,image,price,lang,_pokeId:c.id};
   }));
-  return results;
+  return withImg;
 }
 
 async function searchYugioh(q,lang,limit){
