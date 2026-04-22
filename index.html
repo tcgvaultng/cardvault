@@ -462,7 +462,8 @@ function toast(msg,kind=''){const t=document.createElement('div');t.className='t
 function showLoader(label='Chargement…'){hideLoader();const el=document.createElement('div');el.className='loader';el.id='__loader';el.innerHTML='<div class="spinner"></div><div>'+esc(label)+'</div>';document.body.appendChild(el)}
 function hideLoader(){const l=document.getElementById('__loader');if(l)l.remove()}
 function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.activeUser])STATE.users[STATE.activeUser]={collections:[],cards:[],avatar:'🃏',createdAt:Date.now()};return STATE.users[STATE.activeUser]}
-function imgTag(src){return '<img src="'+esc(src||'')+'" alt="" data-err>'}
+const PLACEHOLDER_IMG='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1a3e"/><stop offset="1" stop-color="#1a0a2e"/></linearGradient></defs><rect width="100" height="140" rx="8" fill="url(#g)"/><text x="50" y="76" text-anchor="middle" font-size="36" fill="#c9a04b">🂠</text><text x="50" y="108" text-anchor="middle" font-size="10" font-family="serif" fill="#b8a9d4">no image</text></svg>');
+function imgTag(src){return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'}
 
 /* ==================== ACTION DISPATCHER (CSP-safe) ==================== */
 const ACTIONS={};
@@ -480,10 +481,12 @@ document.addEventListener('click',e=>{
   fn.apply(null,args);
 });
 
-// Handle broken images via delegation (onerror replacement)
+// Handle broken images via delegation: replace with placeholder instead of hiding
 document.addEventListener('error',e=>{
   if(e.target.tagName==='IMG' && e.target.hasAttribute('data-err')){
-    e.target.classList.add('err-hide');
+    const ph=e.target.getAttribute('data-ph');
+    if(ph&&e.target.src!==ph){e.target.src=ph;e.target.removeAttribute('data-err')}
+    else e.target.classList.add('err-hide');
   }
 },true);
 
@@ -1201,14 +1204,14 @@ async function searchPokemon(q,lang,limit){
   if(!r.ok)throw new Error('TCGdex HTTP '+r.status);
   const j=await r.json();
   let arr=(Array.isArray(j)?j:[]);
-  // Priorité aux cartes avec image (dispo direct dans le brief)
+  // Priorité aux cartes avec image localisée (brief)
   arr.sort((a,b)=>(b.image?1:0)-(a.image?1:0));
-  arr=arr.slice(0,limit*2); // On prend plus large, on filtrera ensuite
-  const results=await Promise.all(arr.map(async c=>{
+  arr=arr.slice(0,limit);
+  // 1) Image FR/JP depuis TCGdex (brief ou détail)
+  const cards=await Promise.all(arr.map(async c=>{
     let image=c.image?c.image+'/high.webp':'';
     let setName='';
     let fullName=c.name;
-    // Si pas d'image dans le brief → tente le détail
     if(!image){
       try{
         const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+c.id);
@@ -1220,28 +1223,31 @@ async function searchPokemon(q,lang,limit){
         }
       }catch(_){}
     }
-    // Prix via pokemontcg.io (best-effort pour les 6 premiers seulement)
-    let price=null;
-    return {id:uid(),game:'pokemon',name:fullName,printedName:fullName,set:setName,image,price,lang,_pokeId:c.id};
+    return {id:uid(),game:'pokemon',name:fullName,printedName:fullName,set:setName,image,price:null,lang,_pokeId:c.id,_imgLocalized:!!image};
   }));
-  // On garde seulement les cartes AVEC image pour éviter les previews vides
-  const withImg=results.filter(x=>x.image).slice(0,limit);
-  // Enrichissement prix en parallèle (non-bloquant pour l'affichage)
-  await Promise.all(withImg.slice(0,8).map(async card=>{
+  // 2) Pour chaque carte sans image localisée → tente l'image EN depuis pokemontcg.io (même ID)
+  //    Aussi : récup prix pour tous (parallèle)
+  await Promise.all(cards.map(async card=>{
     try{
       const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(card._pokeId));
-      if(rp.ok){
-        const jp=await rp.json();
-        const cm=jp.data?.cardmarket?.prices;
-        const tp=jp.data?.tcgplayer?.prices;
-        const tpMarket=tp?Object.values(tp)[0]?.market:null;
-        let p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-        if(p!=null)card.price=Math.round(p*100)/100;
-        if(!card.set&&jp.data?.set?.name)card.set=jp.data.set.name;
+      if(!rp.ok)return;
+      const jp=await rp.json();
+      const data=jp.data;if(!data)return;
+      // Fallback image EN si pas de visuel localisé
+      if(!card.image){
+        card.image=data.images?.large||data.images?.small||'';
       }
+      // Set
+      if(!card.set&&data.set?.name)card.set=data.set.name;
+      // Prix
+      const cm=data.cardmarket?.prices;
+      const tp=data.tcgplayer?.prices;
+      const tpMarket=tp?Object.values(tp)[0]?.market:null;
+      let p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
+      if(p!=null)card.price=Math.round(p*100)/100;
     }catch(_){}
   }));
-  return withImg;
+  return cards;
 }
 
 async function searchYugioh(q,lang,limit){
@@ -1296,30 +1302,48 @@ async function fetchCardInLang(card,lang){
     }catch(e){return null}
   }
   if(card.game==='pokemon'){
-    if(!L.tcgdex)return null;
+    // Helper : image EN depuis pokemontcg.io (fallback ultime)
+    const fetchEnImg=async id=>{
+      if(!id)return null;
+      try{
+        const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(id));
+        if(!rp.ok)return null;
+        const jp=await rp.json();
+        return {name:jp.data?.name||card.name,image:jp.data?.images?.large||jp.data?.images?.small||'',set:jp.data?.set?.name||card.set||''};
+      }catch(_){return null}
+    };
+    if(lang==='en')return await fetchEnImg(card._pokeId||card.name);
+    if(!L.tcgdex){
+      // Langue non supportée par TCGdex → fallback image EN
+      return await fetchEnImg(card._pokeId);
+    }
     try{
-      // 1) Essai direct : si on a l'ID pokemontcg.io, on interroge TCGdex avec cet ID
-      if(card._pokeId){
-        const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+card._pokeId);
+      // 1) ID canonique sur TCGdex
+      const pokeId=card._pokeId;
+      if(pokeId){
+        const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+pokeId);
         if(rd.ok){
           const d=await rd.json();
           if(d.image)return {name:d.name||card.name,image:d.image+'/high.webp',set:d.set?.name||card.set||''};
         }
       }
-      // 2) Recherche par nom (EN canonique)
+      // 2) Recherche par nom
       const r=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards?name='+encodeURIComponent(card.name));
-      if(!r.ok)return null;
-      const j=await r.json();
-      const first=(Array.isArray(j)?j:[])[0];if(!first)return null;
-      // Récup image HQ via le détail
-      const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+first.id);
-      if(rd.ok){
-        const d=await rd.json();
-        if(d.image)return {name:d.name||first.name,image:d.image+'/high.webp',set:d.set?.name||card.set||''};
+      if(r.ok){
+        const j=await r.json();
+        const first=(Array.isArray(j)?j:[])[0];
+        if(first){
+          const rd=await fetch('https://api.tcgdex.net/v2/'+L.tcgdex+'/cards/'+first.id);
+          if(rd.ok){
+            const d=await rd.json();
+            if(d.image)return {name:d.name||first.name,image:d.image+'/high.webp',set:d.set?.name||card.set||''};
+          }
+          if(first.image)return {name:first.name,image:first.image+'/high.webp',set:card.set||''};
+        }
       }
-      if(first.image)return {name:first.name,image:first.image+'/high.webp',set:card.set||''};
-      return null;
-    }catch(e){return null}
+      // 3) Fallback image EN
+      return await fetchEnImg(pokeId);
+    }catch(e){return await fetchEnImg(card._pokeId)}
   }
   return null;
 }
