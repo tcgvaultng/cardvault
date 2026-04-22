@@ -1271,40 +1271,80 @@ function chooseCollectionAndAdd(card){
     u.collections.push({id:uid(),name:'Principale',color:'#c9a04b',createdAt:Date.now()});
     saveLocal();
   }
+  // Clone pour permettre modifs locales (langue/visuel) avant ajout
+  const draft={...card,lang:card.lang||'en'};
   const opts=u.collections.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
-  openModal('Ajouter à une collection',
-    '<div class="card-detail">'
-    +(card.image?'<img src="'+esc(card.image)+'" alt="" style="max-width:180px" data-err>':'')
-    +'<div style="text-align:center" class="mb-14">'
-    +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(card.name)+'</div>'
-    +'<div class="muted">'+esc(card.set||'')+' • '+fmtEur(card.price)+'</div></div>'
-    +'<div class="field"><label>Collection</label><select id="add_coll">'+opts+'</select></div>'
-    +'<div class="field"><label>Quantité</label><input id="add_qty" type="number" value="1" min="1"></div>'
-    +(card.price==null?'<div class="field"><label>Prix (€) optionnel</label><input id="add_price" type="number" step="0.01" placeholder="0.00"></div>':'')
-    +'<button class="btn btn-primary btn-block" id="add_ok">✅ Ajouter à la collection</button>'
-    +'</div>',
-    ()=>{
-      document.getElementById('add_ok').addEventListener('click',()=>{
-        const cid=document.getElementById('add_coll').value;
-        const qty=Math.max(1,parseInt(document.getElementById('add_qty').value)||1);
-        const pi=document.getElementById('add_price');
-        const price=pi?(parseFloat(pi.value)||null):card.price;
-        const u=getUser();u.cards=u.cards||[];
-        const existing=u.cards.find(x=>x.collectionId===cid&&x.name===card.name&&(x.set||'')===(card.set||'')&&x.game===card.game);
-        if(existing){
-          existing.quantity=(existing.quantity||1)+qty;
-          if(price!=null)existing.price=price;
-          touchCard(existing);
-          toast('Quantité mise à jour ✓','ok');
-        } else {
-          const now=Date.now();
-          u.cards.push({id:uid(),collectionId:cid,name:card.name,game:card.game,set:card.set||'',image:card.image||'',price,quantity:qty,addedAt:now,updatedAt:now});
-          touchActiveUser();
-          toast('Carte ajoutée ✓','ok');
+  const supportsLang=(draft.game==='mtg'||draft.game==='yugioh');
+  const langOpts=Object.entries(LANGS).map(([k,L])=>{
+    if(draft.game==='yugioh'&&k!=='en'&&!L.ygo)return '';
+    return '<option value="'+k+'"'+(draft.lang===k?' selected':'')+'>'+L.label+'</option>';
+  }).join('');
+  const render=()=>{
+    openModal('Ajouter à une collection',
+      '<div class="card-detail">'
+      +'<div id="add_preview">'
+      +(draft.image?'<img src="'+esc(draft.image)+'" alt="" style="max-width:180px" data-err>':'')
+      +'<div style="text-align:center" class="mb-14">'
+      +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(draft.printedName||draft.name)+'</div>'
+      +'<div class="muted">'+esc(draft.set||'')+' • '+fmtEur(draft.price)+'</div></div>'
+      +'</div>'
+      +'<div class="field"><label>Collection</label><select id="add_coll">'+opts+'</select></div>'
+      +'<div class="field"><label>Langue de la carte</label><select id="add_lang">'+langOpts+'</select>'
+      +(supportsLang?'<div class="hint">Le visuel sera remplacé par la version dans cette langue.</div>':'<div class="hint">Langue enregistrée (visuel non remplaçable pour ce jeu).</div>')
+      +'</div>'
+      +'<div class="field"><label>Quantité</label><input id="add_qty" type="number" value="1" min="1"></div>'
+      +(draft.price==null?'<div class="field"><label>Prix (€) optionnel</label><input id="add_price" type="number" step="0.01" placeholder="0.00"></div>':'')
+      +'<button class="btn btn-primary btn-block" id="add_ok">✅ Ajouter à la collection</button>'
+      +'</div>',
+      ()=>{
+        const langSel=document.getElementById('add_lang');
+        if(langSel&&supportsLang){
+          langSel.addEventListener('change',async()=>{
+            const newLang=langSel.value;
+            if(newLang===draft.lang)return;
+            try{
+              showLoader('Chargement du visuel '+(LANGS[newLang]?.label||newLang)+'…');
+              const res=await fetchCardInLang(draft,newLang);
+              if(res){
+                draft.image=res.image;
+                draft.printedName=res.name;
+                draft.lang=newLang;
+                toast('Langue : '+(LANGS[newLang]?.label||newLang),'ok');
+              } else {
+                draft.lang=newLang;
+                toast('Visuel indisponible dans cette langue','err');
+              }
+            }catch(e){toast('Erreur: '+e.message,'err')}
+            finally{hideLoader();render()}
+          });
+        } else if(langSel){
+          langSel.addEventListener('change',()=>{draft.lang=langSel.value});
         }
-        saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+        document.getElementById('add_ok').addEventListener('click',()=>{
+          const cid=document.getElementById('add_coll').value;
+          const qty=Math.max(1,parseInt(document.getElementById('add_qty').value)||1);
+          const pi=document.getElementById('add_price');
+          const price=pi?(parseFloat(pi.value)||null):draft.price;
+          const chosenLang=document.getElementById('add_lang').value;
+          const u=getUser();u.cards=u.cards||[];
+          const existing=u.cards.find(x=>x.collectionId===cid&&x.name===draft.name&&(x.set||'')===(draft.set||'')&&x.game===draft.game&&(x.lang||'en')===chosenLang);
+          if(existing){
+            existing.quantity=(existing.quantity||1)+qty;
+            if(price!=null)existing.price=price;
+            if(draft.image&&!existing.image)existing.image=draft.image;
+            touchCard(existing);
+            toast('Quantité mise à jour ✓','ok');
+          } else {
+            const now=Date.now();
+            u.cards.push({id:uid(),collectionId:cid,name:draft.name,printedName:draft.printedName||'',game:draft.game,set:draft.set||'',image:draft.image||'',price,quantity:qty,lang:chosenLang,addedAt:now,updatedAt:now});
+            touchActiveUser();
+            toast('Carte ajoutée ✓','ok');
+          }
+          saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+        });
       });
-    });
+  };
+  render();
 }
 
 /* ==================== SCAN (Gemini) ==================== */
