@@ -1313,6 +1313,63 @@ async function searchScryfall(q,lang,limit,opts){
   return all.slice(0,limit);
 }
 
+// Génère une liste d'IDs candidats pokemontcg.io à partir d'un ID TCGdex
+// (gère les variantes Classic Collection: cel25-2A → cel25c-2_A, etc.)
+function pokeIdCandidates(tcgdexId){
+  if(!tcgdexId)return [];
+  const seen=new Set();const out=[];
+  const add=x=>{if(x&&!seen.has(x)){seen.add(x);out.push(x)}};
+  add(tcgdexId);
+  // set-num suffix (ex: cel25-2A, cel25-15A2, cel25-24A)
+  const m=tcgdexId.match(/^([a-z0-9]+)-(\d+)([A-Za-z][A-Za-z0-9]*)$/i);
+  if(m){
+    const set=m[1],num=m[2],suf=m[3];
+    add(set+'c-'+num+'_'+suf);   // Classic Collection (cel25c-2_A)
+    add(set+'-'+num+'_'+suf);    // même set avec underscore
+    add(set+'-'+num);            // carte de base même numéro
+    add(set+'c-'+num);           // base num dans Classic Collection
+  }
+  // set-num simple (ex: cel25-8) → tente aussi cel25c-8_A au cas où
+  const m2=tcgdexId.match(/^([a-z0-9]+)-(\d+)$/i);
+  if(m2){
+    const set=m2[1],num=m2[2];
+    add(set+'c-'+num+'_A');
+  }
+  return out;
+}
+
+// Récupère l'image/nom d'une carte depuis pokemontcg.io en essayant
+// plusieurs IDs candidats, puis en dernier recours cherche par set+number
+async function pokeFetchFallback(tcgdexId,fallbackNumber){
+  const ids=pokeIdCandidates(tcgdexId);
+  for(const id of ids){
+    try{
+      const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(id));
+      if(rp.ok){
+        const jp=await rp.json();
+        if(jp.data)return jp.data;
+      }
+    }catch(_){}
+  }
+  // Fallback ultime : recherche par set.id + number
+  if(tcgdexId){
+    const m=tcgdexId.match(/^([a-z0-9]+)-(\d+)/i);
+    if(m){
+      const num=fallbackNumber||m[2];
+      for(const setId of [m[1],m[1]+'c']){
+        try{
+          const rs=await fetch('https://api.pokemontcg.io/v2/cards?q='+encodeURIComponent('set.id:'+setId+' number:"'+num+'"')+'&pageSize=5');
+          if(rs.ok){
+            const js=await rs.json();
+            if(js.data&&js.data.length)return js.data[0];
+          }
+        }catch(_){}
+      }
+    }
+  }
+  return null;
+}
+
 async function searchPokemon(q,lang,limit,opts){
   const L=LANGS[lang]||LANGS.en;
   opts=opts||{};
@@ -1393,21 +1450,16 @@ async function searchPokemon(q,lang,limit,opts){
     }
     return {id:uid(),game:'pokemon',name:fullName,printedName:fullName,set:setName,image,price:null,lang,_pokeId:c.id,_imgLocalized:!!image};
   }));
-  // 2) Pour chaque carte sans image localisée → tente l'image EN depuis pokemontcg.io (même ID)
-  //    Aussi : récup prix pour tous (parallèle)
+  // 2) Pour chaque carte sans image localisée → essaie plusieurs IDs candidats
+  //    sur pokemontcg.io (gère Classic Collection et variantes). Aussi : prix.
   await Promise.all(cards.map(async card=>{
     try{
-      const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(card._pokeId));
-      if(!rp.ok)return;
-      const jp=await rp.json();
-      const data=jp.data;if(!data)return;
-      // Fallback image EN si pas de visuel localisé
+      const data=await pokeFetchFallback(card._pokeId,card.number);
+      if(!data)return;
       if(!card.image){
         card.image=data.images?.large||data.images?.small||'';
       }
-      // Set
       if(!card.set&&data.set?.name)card.set=data.set.name;
-      // Prix
       const cm=data.cardmarket?.prices;
       const tp=data.tcgplayer?.prices;
       const tpMarket=tp?Object.values(tp)[0]?.market:null;
@@ -1501,15 +1553,12 @@ async function fetchCardInLang(card,lang){
     }catch(e){return null}
   }
   if(card.game==='pokemon'){
-    // Helper : image EN depuis pokemontcg.io (fallback ultime)
+    // Helper : image EN depuis pokemontcg.io avec plusieurs IDs candidats
     const fetchEnImg=async id=>{
       if(!id)return null;
-      try{
-        const rp=await fetch('https://api.pokemontcg.io/v2/cards/'+encodeURIComponent(id));
-        if(!rp.ok)return null;
-        const jp=await rp.json();
-        return {name:jp.data?.name||card.name,image:jp.data?.images?.large||jp.data?.images?.small||'',set:jp.data?.set?.name||card.set||''};
-      }catch(_){return null}
+      const data=await pokeFetchFallback(id,card.number);
+      if(!data)return null;
+      return {name:data.name||card.name,image:data.images?.large||data.images?.small||'',set:data.set?.name||card.set||''};
     };
     if(lang==='en')return await fetchEnImg(card._pokeId||card.name);
     if(!L.tcgdex){
