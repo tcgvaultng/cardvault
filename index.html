@@ -349,9 +349,9 @@ img.err-hide{visibility:hidden}
       <div class="panel">
         <div class="panel-title">☁️ GitHub Gist</div>
         <div class="field">
-          <label>Token GitHub (scope: gist)</label>
+          <label>Token GitHub (scope: gist [+ repo si images privées])</label>
           <input id="cfgToken" type="password" placeholder="ghp_...">
-          <div class="hint">github.com/settings/tokens/new → coche "gist"</div>
+          <div class="hint">github.com/settings/tokens/new → coche "gist" (et "repo" si tu uploades des visuels persos)</div>
         </div>
         <div class="field">
           <label>Gist ID</label>
@@ -363,6 +363,16 @@ img.err-hide{visibility:hidden}
         </div>
         <button class="btn btn-violet btn-block mt-10" data-act="openAddDevice">📱 Ajouter un appareil</button>
         <div id="cfgSyncStatus" class="hint mt-10"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🖼️ Images privées (optionnel)</div>
+        <div class="field">
+          <label>Repo GitHub privé pour images</label>
+          <input id="cfgImagesRepo" placeholder="owner/cardvault-images">
+          <div class="hint">Crée un repo privé sur GitHub. Le token doit avoir scope <b>repo</b>.</div>
+        </div>
+        <button class="btn btn-primary btn-block" data-act="saveImagesRepo">💾 Enregistrer le repo images</button>
+        <div class="hint mt-10">Les visuels persos seront compressés (WebP 800×1100) et uploadés ici. Affichage privé via ton token.</div>
       </div>
       <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
@@ -414,7 +424,7 @@ const LANGS={
   zht:{label:'🇹🇼 繁體中文',sf:'zht',ygo:'',tcgdex:'zh-tw'}
 };
 
-let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:''}};
+let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:'',imagesRepo:''}};
 let CAM_STREAM=null;
 let _searchCache=[];
 let _scanCache=[];
@@ -477,11 +487,12 @@ function loadLocal(){
       const p=JSON.parse(r);
       STATE=Object.assign(STATE,p);
       if(!STATE.users)STATE.users={};
-      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''};
+      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:'',imagesRepo:''};
       else{
         if(STATE.config.githubToken==null)STATE.config.githubToken='';
         if(STATE.config.gistId==null)STATE.config.gistId='';
         if(STATE.config.geminiKey==null)STATE.config.geminiKey='';
+        if(STATE.config.imagesRepo==null)STATE.config.imagesRepo='';
       }
       /* Migration v5 → v6 : chaque profil et chaque carte a un updatedAt */
       const now=Date.now();
@@ -513,7 +524,81 @@ function showLoader(label='Chargement…'){hideLoader();const el=document.create
 function hideLoader(){const l=document.getElementById('__loader');if(l)l.remove()}
 function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.activeUser])STATE.users[STATE.activeUser]={collections:[],cards:[],avatar:'🃏',createdAt:Date.now()};return STATE.users[STATE.activeUser]}
 const PLACEHOLDER_IMG='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1a3e"/><stop offset="1" stop-color="#1a0a2e"/></linearGradient></defs><rect width="100" height="140" rx="8" fill="url(#g)"/><text x="50" y="76" text-anchor="middle" font-size="36" fill="#c9a04b">🂠</text><text x="50" y="108" text-anchor="middle" font-size="10" font-family="serif" fill="#b8a9d4">no image</text></svg>');
-function imgTag(src){return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'}
+/* ==================== IMAGES PRIVEES (repo GitHub prive) ==================== */
+const PRIV_PREFIX='gh-private://';
+const _imgBlobUrlCache=new Map();
+function isPrivImage(ref){return typeof ref==='string'&&ref.startsWith(PRIV_PREFIX)}
+
+async function compressImageFile(file,maxW=800,maxH=1100,quality=0.82){
+  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)});
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  const ratio=Math.min(maxW/img.width,maxH/img.height,1);
+  const w=Math.max(1,Math.round(img.width*ratio));
+  const h=Math.max(1,Math.round(img.height*ratio));
+  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+  return await new Promise((res,rej)=>{canvas.toBlob(b=>b?res(b):rej(new Error('Compression échouée')),'image/webp',quality)});
+}
+async function _blobToBase64(blob){
+  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const s=r.result;const i=s.indexOf(',');res(i>=0?s.slice(i+1):s)};r.onerror=rej;r.readAsDataURL(blob)});
+}
+async function uploadPrivateImage(file,cardId){
+  const repo=STATE.config.imagesRepo;const token=STATE.config.githubToken;
+  if(!repo)throw new Error('Repo images privé non configuré (Config)');
+  if(!token)throw new Error('Token GitHub manquant (Config)');
+  const blob=await compressImageFile(file);
+  const b64=await _blobToBase64(blob);
+  const path='cards/'+cardId+'.webp';
+  let sha;
+  try{const r0=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{headers:{Authorization:'token '+token}});if(r0.ok){const j0=await r0.json();sha=j0.sha}}catch(_){}
+  const body={message:'Upload card '+cardId,content:b64};if(sha)body.sha=sha;
+  const r=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{method:'PUT',headers:{Authorization:'token '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error('HTTP '+r.status+' '+(e.message||''))}
+  await idbSet('img:'+path,blob);
+  const url=URL.createObjectURL(blob);_imgBlobUrlCache.set(path,url);
+  return PRIV_PREFIX+path;
+}
+async function resolvePrivateImage(ref){
+  if(!isPrivImage(ref))return ref;
+  const path=ref.slice(PRIV_PREFIX.length);
+  if(_imgBlobUrlCache.has(path))return _imgBlobUrlCache.get(path);
+  const cached=await idbGet('img:'+path);
+  if(cached){const url=URL.createObjectURL(cached);_imgBlobUrlCache.set(path,url);return url}
+  const repo=STATE.config.imagesRepo;const token=STATE.config.githubToken;
+  if(!repo||!token)return PLACEHOLDER_IMG;
+  try{
+    const r=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{headers:{Authorization:'token '+token,Accept:'application/vnd.github.raw'}});
+    if(!r.ok)return PLACEHOLDER_IMG;
+    const blob=await r.blob();
+    await idbSet('img:'+path,blob);
+    const url=URL.createObjectURL(blob);_imgBlobUrlCache.set(path,url);
+    return url;
+  }catch(e){return PLACEHOLDER_IMG}
+}
+const _privImgIO=('IntersectionObserver' in window)?new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){_privImgIO.unobserve(e.target);_resolvePrivImg(e.target)}})},{rootMargin:'200px'}):null;
+function _resolvePrivImg(img){const path=img.dataset.priv;if(!path||img.dataset.privDone)return;img.dataset.privDone='1';resolvePrivateImage(PRIV_PREFIX+path).then(url=>{img.src=url}).catch(()=>{})}
+function _watchPrivImgs(){
+  const mo=new MutationObserver(muts=>{
+    muts.forEach(m=>{m.addedNodes.forEach(n=>{
+      if(n.nodeType!==1)return;
+      const list=n.querySelectorAll?n.querySelectorAll('img[data-priv]:not([data-priv-done])'):[];
+      list.forEach(img=>{if(_privImgIO)_privImgIO.observe(img);else _resolvePrivImg(img)});
+      if(n.matches&&n.matches('img[data-priv]')){if(_privImgIO)_privImgIO.observe(n);else _resolvePrivImg(n)}
+    })});
+  });
+  mo.observe(document.body,{childList:true,subtree:true});
+}
+if(typeof document!=='undefined'&&document.body)_watchPrivImgs();
+else document.addEventListener('DOMContentLoaded',_watchPrivImgs);
+
+function imgTag(src,extraAttrs){
+  const extra=extraAttrs?(' '+extraAttrs):'';
+  if(isPrivImage(src)){
+    const path=src.slice(PRIV_PREFIX.length);
+    return '<img src="'+esc(PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" data-priv="'+esc(path)+'"'+extra+'>';
+  }
+  return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'"'+extra+'>';
+}
 
 /* ==================== ACTION DISPATCHER (CSP-safe) ==================== */
 const ACTIONS={};
@@ -659,7 +744,7 @@ function switchProfile(){
 
 /* ==================== DEVICE PAIRING ==================== */
 function buildPairUrl(){
-  const payload={g:STATE.config.gistId||'',t:STATE.config.githubToken||'',k:STATE.config.geminiKey||''};
+  const payload={g:STATE.config.gistId||'',t:STATE.config.githubToken||'',k:STATE.config.geminiKey||'',i:STATE.config.imagesRepo||''};
   const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   const base=location.origin+location.pathname;
   return base+'#setup='+b64;
@@ -698,6 +783,7 @@ function tryParseSetupUrl(){
     if(p.g)STATE.config.gistId=p.g;
     if(p.t)STATE.config.githubToken=p.t;
     if(p.k)STATE.config.geminiKey=p.k;
+    if(p.i)STATE.config.imagesRepo=p.i;
     saveLocal();
     history.replaceState(null,'',location.pathname+location.search);
     return true;
@@ -794,7 +880,7 @@ async function fetchGist(id){
 }
 
 function buildPayload(){
-  return {version:GIST_VERSION,appVersion:APP_VERSION,users:STATE.users,sharedConfig:{geminiKey:STATE.config.geminiKey||''},updatedAt:Date.now()};
+  return {version:GIST_VERSION,appVersion:APP_VERSION,users:STATE.users,sharedConfig:{geminiKey:STATE.config.geminiKey||'',imagesRepo:STATE.config.imagesRepo||''},updatedAt:Date.now()};
 }
 
 async function createGist(){
@@ -814,6 +900,7 @@ async function updateGist(){
     if(remote&&remote.users){
       STATE.users=mergeUsers(STATE.users,remote.users);
       if(remote.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=remote.sharedConfig.geminiKey;
+      if(remote.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=remote.sharedConfig.imagesRepo;
     }
   }catch(_){}
   const body={files:{[GIST_FILE]:{content:JSON.stringify(buildPayload(),null,2)}}};
@@ -832,6 +919,7 @@ async function pullGist(){
       if(data&&data.users){
         STATE.users=mergeUsers(STATE.users,data.users);
         if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
+        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
         saveLocal();
         return true;
       }
@@ -909,6 +997,7 @@ async function saveTokenAndSync(){
         if(data&&data.users){
           STATE.users=mergeUsers(STATE.users,data.users);
           if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
+        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
           saveLocal();
         }
       }catch(_){}
@@ -940,6 +1029,14 @@ function saveGemini(){
   STATE.config.geminiKey=document.getElementById('cfgGemini').value.trim();
   saveLocal();
   toast('Clé Gemini enregistrée ✓','ok');
+}
+
+function saveImagesRepo(){
+  const v=document.getElementById('cfgImagesRepo').value.trim();
+  if(v&&!/^[\w.-]+\/[\w.-]+$/.test(v)){toast('Format attendu : owner/repo','err');return}
+  STATE.config.imagesRepo=v;
+  saveLocal();scheduleSync();
+  toast(v?('Repo images : '+v):'Repo images effacé','ok');
 }
 
 function resetApp(){
@@ -1097,7 +1194,7 @@ function openCardDetail(cardId){
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   openModal('Détails de la carte',
     '<div class="card-detail">'
-    +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
+    +imgTag(c.image)
     +'<div class="price-big">'+fmtEur(c.price)+'</div>'
     +'<div class="meta-grid">'
     +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
@@ -1126,8 +1223,33 @@ function openCardDetail(cardId){
     +'<button class="btn btn-primary" data-act="saveCardChanges" data-args="'+esc(JSON.stringify([c.id]))+'">💾 Sauver</button>'
     +'<button class="btn btn-ghost" data-act="refreshPrice" data-args="'+esc(JSON.stringify([c.id]))+'">🔄 MAJ prix</button>'
     +'</div>'
+    +'<label class="btn btn-violet btn-block mt-10" style="cursor:pointer"><input type="file" accept="image/*" id="cd_img_in_'+c.id+'" style="display:none">📁 Importer un visuel personnel</label>'
+    +(isPrivImage(c.image)?'<button class="btn btn-ghost btn-block mt-10" data-act="removePrivateCardImage" data-args="'+esc(JSON.stringify([c.id]))+'">🗑️ Supprimer le visuel perso</button>':'')
     +'<button class="btn btn-danger btn-block mt-10" data-act="deleteCard" data-args="'+esc(JSON.stringify([c.id]))+'">🗑️ Supprimer</button>'
-    +'</div>');
+    +'</div>',
+    ()=>{
+      const inp=document.getElementById('cd_img_in_'+c.id);
+      if(inp)inp.addEventListener('change',async ev=>{
+        const f=ev.target.files&&ev.target.files[0];if(!f)return;
+        try{
+          showLoader('Compression et upload…');
+          const ref=await uploadPrivateImage(f,c.id);
+          c.image=ref;c.lang=c.lang||'en';
+          touchCard(c);saveLocal();scheduleSync();
+          toast('Visuel personnel uploadé ✓','ok');
+          openCardDetail(c.id);
+        }catch(e){toast('Erreur upload: '+e.message,'err')}
+        finally{hideLoader()}
+      });
+    });
+}
+
+function removePrivateCardImage(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  if(!confirm('Supprimer le visuel personnel ? La carte n\'aura plus d\'image (placeholder ou refetch via la recherche).'))return;
+  c.image='';touchCard(c);saveLocal();scheduleSync();
+  toast('Visuel perso retiré','ok');
+  openCardDetail(id);
 }
 
 function adjQty(id,d){
@@ -1742,7 +1864,7 @@ function chooseCollectionAndAdd(card){
     openModal('Ajouter à une collection',
       '<div class="card-detail">'
       +'<div id="add_preview">'
-      +'<img src="'+esc(draft.image||PLACEHOLDER_IMG)+'" alt="" style="max-width:180px" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
+      +imgTag(draft.image,'style="max-width:180px"')
       +'<div style="text-align:center" class="mb-14">'
       +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(draft.printedName||draft.name)+'</div>'
       +'<div class="muted">'+esc(draft.set||'')+' • '+fmtEur(draft.price)+'</div></div>'
@@ -2002,7 +2124,7 @@ function topCardBlock(c){
   if(!c)return '<div class="card-row" style="opacity:.5"><div class="info"><div class="nm">—</div><div class="sub">Aucune carte</div></div></div>';
   const g=GAMES[c.game]||{};
   return '<div class="card-row" style="flex-direction:column;align-items:flex-start;padding:10px">'
-    +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;height:auto;margin-bottom:6px;aspect-ratio:2.5/3.5;object-fit:cover">'
+    +imgTag(c.image,'style="width:100%;height:auto;margin-bottom:6px;aspect-ratio:2.5/3.5;object-fit:cover"')
     +'<div class="info" style="width:100%"><div class="nm">'+esc(c.name)+'</div>'
     +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+'</div>'
     +'<div class="price" style="margin-top:4px">'+fmtEur(c.price)+'</div></div></div>';
@@ -2021,6 +2143,7 @@ function renderConfig(){
   document.getElementById('cfgToken').value=STATE.config.githubToken||'';
   document.getElementById('cfgGistId').value=STATE.config.gistId||'';
   document.getElementById('cfgGemini').value=STATE.config.geminiKey||'';
+  const ir=document.getElementById('cfgImagesRepo');if(ir)ir.value=STATE.config.imagesRepo||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
 }
 
@@ -2056,7 +2179,8 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,
+  saveTokenAndSync,shareGistId,saveGemini,saveImagesRepo,resetApp,syncPull,openAddDevice,
+  removePrivateCardImage,
   switchView
 });
 
@@ -2100,6 +2224,7 @@ if(_paired){
       if(data&&data.users){
         STATE.users=mergeUsers(STATE.users||{},data.users);
         if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
+        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
         saveLocal();
       }
     }catch(e){toast('Sync échoué: '+e.message,'err')}
