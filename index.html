@@ -928,7 +928,7 @@ function renderCollections(){
     const cards=(u.cards||[]).filter(x=>x.collectionId===c.id);
     const val=cards.reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
     const total=cards.reduce((s,x)=>s+(x.quantity||1),0);
-    const thumbs=cards.slice(0,4).map(x=>x.image?imgTag(x.image):'').join('');
+    const thumbs=cards.slice(0,4).map(x=>imgTag(x.image)).join('');
     return '<div class="coll-card" style="--cc:'+c.color+'" data-act="openCollection" data-args="'+esc(JSON.stringify([c.id]))+'">'
       +'<div><div class="cc-name">'+esc(c.name)+'</div><div class="cc-meta"><span>'+total+' cartes</span><span>'+cards.length+' uniques</span></div></div>'
       +'<div><div class="cc-thumbs">'+thumbs+'</div><div class="cc-value">'+fmtEur(val)+'</div></div></div>';
@@ -1055,7 +1055,7 @@ function openCardDetail(cardId){
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   openModal('Détails de la carte',
     '<div class="card-detail">'
-    +(c.image?'<img src="'+esc(c.image)+'" alt="" data-err>':'')
+    +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
     +'<div class="price-big">'+fmtEur(c.price)+'</div>'
     +'<div class="meta-grid">'
     +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
@@ -1509,8 +1509,19 @@ async function searchYugioh(q,lang,limit,opts){
   return results.slice(0,limit);
 }
 
-/* Récupère le visuel d'une carte dans une langue donnée */
+/* Récupère le visuel d'une carte dans une langue donnée, avec repli EN puis JA */
 async function fetchCardInLang(card,lang){
+  let res=await _fetchCardVisualForLang(card,lang);
+  if(res)return res;
+  const fallbacks=['fr','en','ja'].filter(l=>l!==lang);
+  for(const fb of fallbacks){
+    res=await _fetchCardVisualForLang(card,fb);
+    if(res){res._fallbackLang=fb;return res}
+  }
+  return null;
+}
+
+async function _fetchCardVisualForLang(card,lang){
   const L=LANGS[lang];if(!L)return null;
   if(card.game==='mtg'){
     const tryQ=async q=>{
@@ -1607,6 +1618,9 @@ async function changeCardLanguage(cardId,lang){
       if(res.name)c.printedName=res.name;
       c.lang=lang;
       touchCard(c);
+      if(res._fallbackLang){
+        toast('Visuel indisponible en '+(LANGS[lang]?.label||lang)+' — affiché en '+(LANGS[res._fallbackLang]?.label||res._fallbackLang),'err');
+      }
       saveLocal();scheduleSync();
       toast('Langue : '+(LANGS[lang]?.label||lang),'ok');
       openCardDetail(cardId);
@@ -1686,7 +1700,7 @@ function chooseCollectionAndAdd(card){
     openModal('Ajouter à une collection',
       '<div class="card-detail">'
       +'<div id="add_preview">'
-      +(draft.image?'<img src="'+esc(draft.image)+'" alt="" style="max-width:180px" data-err>':'')
+      +'<img src="'+esc(draft.image||PLACEHOLDER_IMG)+'" alt="" style="max-width:180px" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
       +'<div style="text-align:center" class="mb-14">'
       +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(draft.printedName||draft.name)+'</div>'
       +'<div class="muted">'+esc(draft.set||'')+' • '+fmtEur(draft.price)+'</div></div>'
@@ -1712,7 +1726,11 @@ function chooseCollectionAndAdd(card){
                 draft.image=res.image;
                 draft.printedName=res.name;
                 draft.lang=newLang;
-                toast('Langue : '+(LANGS[newLang]?.label||newLang),'ok');
+                if(res._fallbackLang){
+                  toast('Visuel indisponible en '+(LANGS[newLang]?.label||newLang)+' — affiché en '+(LANGS[res._fallbackLang]?.label||res._fallbackLang),'err');
+                } else {
+                  toast('Langue : '+(LANGS[newLang]?.label||newLang),'ok');
+                }
               } else {
                 draft.lang=newLang;
                 toast('Visuel indisponible dans cette langue','err');
@@ -1942,7 +1960,7 @@ function topCardBlock(c){
   if(!c)return '<div class="card-row" style="opacity:.5"><div class="info"><div class="nm">—</div><div class="sub">Aucune carte</div></div></div>';
   const g=GAMES[c.game]||{};
   return '<div class="card-row" style="flex-direction:column;align-items:flex-start;padding:10px">'
-    +(c.image?'<img src="'+esc(c.image)+'" alt="" data-err style="width:100%;height:auto;margin-bottom:6px;aspect-ratio:2.5/3.5;object-fit:cover">':'')
+    +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;height:auto;margin-bottom:6px;aspect-ratio:2.5/3.5;object-fit:cover">'
     +'<div class="info" style="width:100%"><div class="nm">'+esc(c.name)+'</div>'
     +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+'</div>'
     +'<div class="price" style="margin-top:4px">'+fmtEur(c.price)+'</div></div></div>';
