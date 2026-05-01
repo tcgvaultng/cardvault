@@ -372,6 +372,7 @@ img.err-hide{visibility:hidden}
           <div class="hint">Crée un repo privé sur GitHub. Le token doit avoir scope <b>repo</b>.</div>
         </div>
         <button class="btn btn-primary btn-block" data-act="saveImagesRepo">💾 Enregistrer le repo images</button>
+        <button class="btn btn-violet btn-block mt-10" data-act="openBatchUpload">📦 Upload en masse (visuels persos)</button>
         <div class="hint mt-10">Les visuels persos seront compressés (WebP 800×1100) et uploadés ici. Affichage privé via ton token.</div>
       </div>
       <div class="panel">
@@ -1037,6 +1038,120 @@ function saveImagesRepo(){
   STATE.config.imagesRepo=v;
   saveLocal();scheduleSync();
   toast(v?('Repo images : '+v):'Repo images effacé','ok');
+}
+
+function _normName(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')}
+
+function _matchCardForFile(filename,cards){
+  const base=filename.replace(/.*[\\/]/,'').replace(/\.[^.]+$/,'');
+  const k=_normName(base);
+  if(!k)return null;
+  /* 1. Match exact sur nom normalisé */
+  let c=cards.find(x=>_normName(x.name)===k);
+  if(c)return c;
+  /* 2. setCode + numéro (ex "swsh1-001", "base-25") */
+  const m=base.match(/([a-zA-Z0-9]+)[\s\-_]+(\d{1,4})/);
+  if(m){
+    const sc=_normName(m[1]);
+    const num=m[2].replace(/^0+/,'')||'0';
+    c=cards.find(x=>_normName(x.setCode||'')===sc&&(x.number||'').replace(/^0+/,'')===num);
+    if(c)return c;
+    /* setCode dans le nom du set au lieu du setCode */
+    c=cards.find(x=>_normName(x.set||'').includes(sc)&&(x.number||'').replace(/^0+/,'')===num);
+    if(c)return c;
+  }
+  /* 3. Numéro seul (ex "001.jpg") → si une seule carte porte ce numéro */
+  const numOnly=base.match(/^0*(\d{1,4})$/);
+  if(numOnly){
+    const num=numOnly[1];
+    const matches=cards.filter(x=>(x.number||'').replace(/^0+/,'')===num);
+    if(matches.length===1)return matches[0];
+  }
+  /* 4. Sous-chaîne (filename contient le nom de la carte ≥4 chars) */
+  c=cards.find(x=>{const nx=_normName(x.name);return nx.length>=4&&k.includes(nx)});
+  if(c)return c;
+  return null;
+}
+
+function openBatchUpload(){
+  if(!STATE.config.imagesRepo){toast('Configure d\'abord le repo images','err');return}
+  if(!STATE.config.githubToken){toast('Token GitHub manquant','err');return}
+  const u=getUser();
+  if(!u||!(u.cards||[]).length){toast('Aucune carte dans la collection','err');return}
+  const inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;inp.accept='image/*';
+  inp.addEventListener('change',ev=>{
+    const files=Array.from(ev.target.files||[]);
+    if(files.length)reviewBatchUpload(files);
+  });
+  inp.click();
+}
+
+function reviewBatchUpload(files){
+  const u=getUser();const cards=u.cards||[];
+  const matches=files.map(f=>({file:f,card:_matchCardForFile(f.name,cards)}));
+  const ok=matches.filter(m=>m.card);
+  const ko=matches.filter(m=>!m.card);
+  /* Détecter les doublons (plusieurs fichiers → même carte) */
+  const seen=new Map();
+  const dupCount={};
+  for(const m of ok){
+    const id=m.card.id;
+    seen.set(id,(seen.get(id)||0)+1);
+  }
+  Object.entries(Object.fromEntries(seen)).forEach(([id,n])=>{if(n>1)dupCount[id]=n});
+  const dupTotal=Object.keys(dupCount).length;
+  const html='<p class="muted mb-14">Sur <b>'+files.length+' fichiers</b> : '
+    +'<span class="chip chip-green">'+ok.length+' associés</span> '
+    +'<span class="chip chip-gold">'+ko.length+' sans match</span>'
+    +(dupTotal?' <span class="chip chip-violet">'+dupTotal+' cartes avec doublons</span>':'')+'</p>'
+    +(ko.length>0?'<details style="margin-bottom:10px"><summary class="muted" style="cursor:pointer">📋 Voir les '+ko.length+' fichiers sans correspondance</summary>'
+        +'<ul style="font-size:12px;color:var(--text-mute);max-height:200px;overflow:auto;padding-left:18px">'
+        +ko.slice(0,200).map(m=>'<li>'+esc(m.file.name)+'</li>').join('')
+        +(ko.length>200?'<li>… +'+(ko.length-200)+' autres</li>':'')+'</ul></details>':'')
+    +(dupTotal?'<div class="hint" style="color:#fbbf24">⚠️ Pour les cartes avec plusieurs fichiers, seul le dernier sera conservé.</div>':'')
+    +'<div class="hint">⏱️ ~1–2 secondes par fichier (compression + upload). Tu peux fermer la modale en cours, ça continue.</div>'
+    +'<div id="batch_progress" class="hint mt-10" style="font-weight:600"></div>'
+    +'<div class="row mt-10">'
+    +'<button class="btn btn-primary" id="batch_go"'+(ok.length===0?' disabled':'')+'>📤 Uploader '+ok.length+' visuels</button>'
+    +'<button class="btn btn-ghost" data-act="closeModal">Annuler</button>'
+    +'</div>';
+  openModal('📦 Import en masse',html,()=>{
+    const btn=document.getElementById('batch_go');
+    if(!btn)return;
+    btn.addEventListener('click',()=>runBatchUpload(ok));
+  });
+}
+
+let _batchInFlight=false;
+async function runBatchUpload(items){
+  if(_batchInFlight){toast('Un upload est déjà en cours','err');return}
+  _batchInFlight=true;
+  const btn=document.getElementById('batch_go');
+  if(btn){btn.disabled=true;btn.textContent='Upload en cours…'}
+  let done=0,fail=0;
+  const total=items.length;
+  const tick=()=>{
+    const p=document.getElementById('batch_progress');
+    if(p)p.textContent='Progression : '+done+'/'+total+' (échecs : '+fail+')';
+  };
+  tick();
+  for(const m of items){
+    try{
+      const ref=await uploadPrivateImage(m.file,m.card.id);
+      m.card.image=ref;touchCard(m.card);
+      done++;
+    }catch(e){
+      fail++;console.warn('Upload échec',m.file.name,e.message);
+    }
+    tick();
+    if((done+fail)%10===0){saveLocal()}
+  }
+  saveLocal();scheduleSync();
+  renderCollections();renderAllCards();
+  toast('Batch terminé : '+done+' OK, '+fail+' échec(s)',fail?'err':'ok');
+  _batchInFlight=false;
+  if(btn){btn.disabled=false;btn.textContent='✓ Terminé'}
 }
 
 function resetApp(){
@@ -2180,7 +2295,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,saveImagesRepo,resetApp,syncPull,openAddDevice,
-  removePrivateCardImage,
+  removePrivateCardImage,openBatchUpload,
   switchView
 });
 
