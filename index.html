@@ -422,11 +422,52 @@ let _gameFilter='all';
 let _syncTimer=null;
 
 /* ==================== UTILS ==================== */
+/* IndexedDB — couche de persistance de secours (resiste mieux aux purges navigateur) */
+const IDB_NAME='cardvault';
+const IDB_STORE='kv';
+function _idbOpen(){
+  return new Promise((res,rej)=>{
+    if(!('indexedDB' in window))return rej(new Error('no-idb'));
+    const r=indexedDB.open(IDB_NAME,1);
+    r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE)};
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+async function idbSet(key,val){
+  try{
+    const db=await _idbOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put(val,key);
+      tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);
+    });
+    db.close();
+  }catch(e){/* best-effort */}
+}
+async function idbGet(key){
+  try{
+    const db=await _idbOpen();
+    const v=await new Promise((res,rej)=>{
+      const tx=db.transaction(IDB_STORE,'readonly');
+      const r=tx.objectStore(IDB_STORE).get(key);
+      r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+    });
+    db.close();
+    return v;
+  }catch(e){return null}
+}
+
 function saveLocal(){
+  let lsOk=false;
   try{
     localStorage.setItem('cardvault_state',JSON.stringify(STATE));
     localStorage.setItem('cardvault_state_backup',JSON.stringify(STATE));
-  }catch(e){console.error('saveLocal failed:',e);toast('⚠️ Sauvegarde locale échouée','err')}
+    lsOk=true;
+  }catch(e){console.error('saveLocal localStorage failed:',e)}
+  /* Toujours sauvegarder en IndexedDB en parallele (best-effort, async) */
+  idbSet('state',STATE);
+  if(!lsOk)toast('⚠️ Stockage localStorage saturé — sauvegarde IndexedDB','err');
 }
 function loadLocal(){
   try{
@@ -904,7 +945,8 @@ function saveGemini(){
 function resetApp(){
   if(!confirm('Tout effacer (local) ? Vos Gists ne sont pas touchés.'))return;
   localStorage.removeItem('cardvault_state');
-  location.reload();
+  localStorage.removeItem('cardvault_state_backup');
+  idbSet('state',null).finally(()=>location.reload());
 }
 
 async function syncPull(){
@@ -2036,6 +2078,19 @@ refreshSearchLangs();
 /* ==================== INIT ==================== */
 loadLocal();
 requestPersistentStorage();
+/* Recuperation IndexedDB si localStorage vide (navigateur l'a purge, etc.) */
+async function recoverFromIdbIfNeeded(){
+  const empty=!STATE.users||Object.keys(STATE.users).length===0;
+  if(!empty)return false;
+  const saved=await idbGet('state');
+  if(!saved||!saved.users||Object.keys(saved.users).length===0)return false;
+  STATE=Object.assign(STATE,saved);
+  if(!STATE.users)STATE.users={};
+  if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''};
+  saveLocal();
+  toast('💾 Données restaurées depuis IndexedDB','ok');
+  return true;
+}
 const _paired=tryParseSetupUrl();
 if(_paired){
   toast('📱 Appareil jumelé — synchronisation…','ok');
@@ -2051,8 +2106,12 @@ if(_paired){
     renderLaunch();
     startAutoSync();
   })();
-} else if(STATE.activeUser&&STATE.users[STATE.activeUser]){bootApp()}
-else{renderLaunch()}
+} else {
+  recoverFromIdbIfNeeded().then(()=>{
+    if(STATE.activeUser&&STATE.users[STATE.activeUser])bootApp();
+    else renderLaunch();
+  });
+}
 </script>
 </body>
 </html>
