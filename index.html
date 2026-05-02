@@ -1825,6 +1825,10 @@ function openCardDetail(cardId){
     +'</div>'
     +(backUrl?'<button class="btn btn-ghost btn-block mb-10" data-act="flipCardImage">↻ Retourner la carte</button>':'')
     +'<div class="price-big">'+fmtEur(c.price)+'</div>'
+    +'<div class="field" style="max-width:280px;margin:0 auto 10px"><label>Prix manuel (€)</label>'
+    +'<div class="row" style="gap:6px"><input id="cd_price" type="number" step="0.01" placeholder="ex 12.50" value="'+(c.price!=null?c.price:'')+'">'
+    +'<button class="btn btn-primary btn-sm" data-act="saveCardPrice" data-args="'+esc(JSON.stringify([c.id]))+'">💾</button></div>'
+    +'<div class="hint" style="font-size:11px">Override le prix auto. Vide = utiliser API.</div></div>'
     +(priceDetail?'<div class="muted" style="font-size:12px;text-align:center;margin-bottom:10px">'+priceDetail+'</div>':'')
     +'<div class="meta-grid">'
     +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
@@ -1878,6 +1882,29 @@ function saveCardChanges(id){
   }
   touchCard(c);
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Sauvé ✓','ok');
+}
+
+function saveCardPrice(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  const inp=document.getElementById('cd_price');if(!inp)return;
+  const raw=inp.value.trim();
+  if(raw===''){
+    c.price=null;
+    if(c.prices)delete c.prices.manual_eur;
+    c._priceManual=false;
+    toast('Prix manuel effacé','ok');
+  } else {
+    const p=parseFloat(raw);
+    if(isNaN(p)||p<0){toast('Prix invalide','err');return}
+    c.price=Math.round(p*100)/100;
+    c.prices=c.prices||{};
+    c.prices.manual_eur=c.price;
+    c._priceManual=true;
+    toast('Prix enregistré : '+fmtEur(c.price),'ok');
+  }
+  touchCard(c);saveLocal();scheduleSync();
+  renderCollections();renderAllCards();
+  openCardDetail(id);
 }
 
 async function refreshPrice(id){
@@ -1934,11 +1961,13 @@ async function refreshAllPrices(){
       while(cards.length>0){
         const c=cards.shift();
         if(!c)break;
+        /* Skip si le prix a ete entre manuellement par l'utilisateur */
+        if(c._priceManual){done++;tick();continue}
         try{
           const res=await searchCards(c.game,c.name,c.lang||'en',3,{set:c.set||'',number:c.number||''});
           if(res.length>0){
             const r0=res[0];
-            if(r0.prices){c.prices=r0.prices}
+            if(r0.prices){c.prices=Object.assign({},r0.prices,c.prices?.manual_eur?{manual_eur:c.prices.manual_eur}:{})}
             if(r0.price!=null&&c.price!==r0.price){c.price=r0.price;updated++}
             c.updatedAt=Date.now();
           }
@@ -3244,7 +3273,7 @@ function bootApp(){
 registerActions({
   pickProfile,openNewProfile,openJoinGist,closeModal,switchProfile,
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
-  openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
+  openCardDetail,adjQty,saveCardChanges,saveCardPrice,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,saveR2Config,saveJustTcgKey,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
