@@ -107,6 +107,11 @@ main{padding:16px 16px 110px}
 .coll-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.5);transform:translateY(-2px)}
 .coll-card.dragging{opacity:.4;transform:scale(.96)}
 .coll-card.drag-over{border-color:var(--violet-2);box-shadow:0 0 0 3px rgba(160,102,255,.4)}
+/* Drop target quand on drag une carte au-dessus d'une collection */
+.coll-card.drop-target{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,160,75,.5);transform:scale(1.02)}
+.coll-card.drop-target::after{content:"📥 Déposer ici";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(201,160,75,.15);font-weight:700;color:var(--gold);font-family:'Cinzel',serif;font-size:14px;z-index:5;pointer-events:none}
+/* Curseur indicatif quand on drag */
+body.card-dragging .coll-card{cursor:copy}
 .coll-drag-handle{position:absolute;top:6px;right:6px;font-size:14px;color:var(--text-mute);cursor:grab;padding:4px 6px;border-radius:4px;opacity:0;transition:opacity .15s;z-index:2;line-height:1;letter-spacing:-2px}
 .coll-card:hover .coll-drag-handle{opacity:.7}
 .coll-drag-handle:hover{opacity:1!important;background:rgba(255,255,255,.08)}
@@ -313,6 +318,27 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
 .theme-preset .nm{font-size:11px;color:var(--text-dim);font-weight:600}
 .theme-custom input[type=color]{width:100%;height:42px;border-radius:8px;cursor:pointer;padding:2px;background:var(--panel);border:1px solid var(--border)}
 .theme-custom input[type=range]{width:100%;height:32px}
+
+/* === Modal Déplacer carte : liste des collections cibles === */
+.move-list{display:flex;flex-direction:column;gap:6px}
+.move-target{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:transform .1s,border-color .15s,background .15s}
+.move-target:hover{border-color:var(--cc,var(--gold));background:rgba(201,160,75,.06);transform:translateX(2px)}
+.move-target-color{width:6px;height:32px;background:var(--cc,var(--gold));border-radius:3px;flex-shrink:0}
+.move-target-info{flex:1;min-width:0}
+.move-target-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.move-target-arrow{color:var(--gold);font-size:18px;font-weight:700;opacity:.5;transition:opacity .15s,transform .15s}
+.move-target:hover .move-target-arrow{opacity:1;transform:translateX(3px)}
+
+/* Bouton "déplacer" sur les card-rows (visible au hover desktop, toujours sur mobile) */
+.card-row .row-move{position:absolute;right:8px;top:50%;transform:translateY(-50%);opacity:0;transition:opacity .15s;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:14px;color:var(--text-dim);cursor:pointer;z-index:2}
+.card-row:hover .row-move{opacity:1}
+.card-row .row-move:hover{background:var(--surface);color:var(--gold);border-color:var(--gold)}
+@media (hover:none){.card-row .row-move{opacity:.7}}
+
+/* Bouton déplacer sur galerie : overlay coin haut-droit (sous le prix) */
+.gallery-card .gc-move{position:absolute;top:8px;right:8px;opacity:0;transition:opacity .15s;background:rgba(0,0,0,.85);color:#fff;padding:4px 7px;border-radius:6px;font-size:11px;z-index:3;cursor:pointer}
+.gallery-card:hover .gc-move{opacity:1}
+.gallery-card.has-price .gc-move{top:36px} /* sous le price-badge si présent */
 
 /* ==================== MOBILE petit écran (<400px) ==================== */
 @media (max-width:399px){
@@ -2048,6 +2074,54 @@ function renderCollections(){
   _wireCollectionDragDrop();
 }
 
+/* === Drag & drop : carte → collection (déplace la carte vers la collection cible) === */
+let _dragCardId=null;
+function _wireCardDragToCollections(){
+  /* Dispatch global : tout draggable[data-card-id] peut être glissé sur un .coll-card */
+  if(document.body.dataset.cardDndWired)return;
+  document.body.dataset.cardDndWired='1';
+  document.addEventListener('dragstart',e=>{
+    const card=e.target.closest('[data-card-id]');
+    if(!card)return;
+    _dragCardId=card.dataset.cardId;
+    e.dataTransfer.effectAllowed='move';
+    try{e.dataTransfer.setData('text/plain',_dragCardId)}catch(_){}
+    document.body.classList.add('card-dragging');
+  });
+  document.addEventListener('dragend',()=>{
+    _dragCardId=null;
+    document.body.classList.remove('card-dragging');
+    document.querySelectorAll('.coll-card.drop-target').forEach(c=>c.classList.remove('drop-target'));
+  });
+  document.addEventListener('dragover',e=>{
+    if(!_dragCardId)return;
+    const target=e.target.closest('.coll-card[data-cid]');
+    if(target){
+      e.preventDefault();
+      e.dataTransfer.dropEffect='move';
+      document.querySelectorAll('.coll-card.drop-target').forEach(c=>{if(c!==target)c.classList.remove('drop-target')});
+      target.classList.add('drop-target');
+    }
+  });
+  document.addEventListener('drop',e=>{
+    if(!_dragCardId)return;
+    const target=e.target.closest('.coll-card[data-cid]');
+    if(!target)return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cid=target.dataset.cid;
+    const u=getUser();
+    const c=(u?.cards||[]).find(x=>x.id===_dragCardId);
+    if(c&&c.collectionId!==cid){
+      c.collectionId=cid;touchCard(c);saveLocal();scheduleSync();
+      renderCollections();renderAllCards();
+      toast('Carte déplacée vers '+esc(u.collections.find(x=>x.id===cid)?.name||'…'),'ok');
+    }
+    _dragCardId=null;
+    target.classList.remove('drop-target');
+  });
+}
+
 /* === Drag & drop pour réordonner les collections === */
 let _dragCollId=null;
 function _wireCollectionDragDrop(){
@@ -2212,11 +2286,12 @@ function renderCardRow(c,opts){
   const sel=opts.selectable&&_cardsSelection.has(c.id)?' selected':'';
   const g=GAMES[c.game]||{name:c.game,color:'#888'};
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
-  return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'">'
+  const moveBtn=opts.movable!==false?'<span class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection" onclick="event.stopPropagation()">📁</span>':'';
+  return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
     +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+((c.quantity||1)>1?' • x'+c.quantity:'')+'</div></div>'
-    +'<div class="price">'+fmtEur(c.price)+'</div></div>';
+    +'<div class="price">'+fmtEur(c.price)+'</div>'+moveBtn+'</div>';
 }
 
 function openCardDetail(cardId){
@@ -2506,6 +2581,7 @@ function _sortCards(cards,sort){
 function renderGalleryCard(c){
   const g=GAMES[c.game]||{name:c.game,color:'#888'};
   const sel=_cardsSelection.has(c.id)?' selected':'';
+  const hasPrice=c.price!=null?' has-price':'';
   const img=c.image
     ? '<img src="'+esc(c.image)+'" loading="lazy" alt="'+esc(c.name)+'" onerror="this.classList.add(\'err-hide\')">'
     : '<div class="placeholder">🃏</div>';
@@ -2513,8 +2589,9 @@ function renderGalleryCard(c){
   const price=c.price!=null?'<span class="price-badge">'+fmtEur(c.price)+'</span>':'';
   const foil=c.foil?'<span class="foil-badge">✨ FOIL</span>':'';
   const dot='<span class="game-dot" style="background:'+g.color+'" title="'+esc(g.name)+'"></span>';
-  return '<div class="gallery-card'+sel+'" data-act="cardClick" data-args="'+esc(JSON.stringify([c.id]))+'">'
-    +'<div class="img-wrap">'+img+qty+price+foil+dot+'</div>'
+  const moveBtn='<span class="gc-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection" onclick="event.stopPropagation()">📁</span>';
+  return '<div class="gallery-card'+sel+hasPrice+'" data-act="cardClick" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
+    +'<div class="img-wrap">'+img+qty+price+foil+dot+moveBtn+'</div>'
     +'<div class="gc-name">'+esc(c.name)+'</div>'
     +'<div class="gc-sub">'+esc(c.set||g.name)+(c.number?' • #'+esc(c.number):'')+'</div>'
     +'</div>';
@@ -2615,25 +2692,53 @@ function bulkDelete(){
 
 function bulkMove(){
   if(_cardsSelection.size===0)return;
+  _openMoveModal([..._cardsSelection]);
+}
+
+/* Déplace 1 carte vers une autre collection (depuis card-row, gallery, ou détail) */
+function moveCard(id){
+  if(!id)return;
+  _openMoveModal([id]);
+}
+
+/* Modal commun pour déplacer 1 ou plusieurs cartes */
+function _openMoveModal(ids){
   const u=getUser();
-  if(!u.collections||u.collections.length===0){toast('Aucune collection','err');return}
-  const opts=u.collections.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
-  openModal('Déplacer '+_cardsSelection.size+' carte(s)',
-    '<div class="field"><label>Vers la collection</label><select id="bulk_target">'+opts+'</select></div>'
-    +'<button class="btn btn-primary btn-block" id="bulk_move_ok">📁 Déplacer</button>',
-    ()=>{
-      document.getElementById('bulk_move_ok').addEventListener('click',()=>{
-        const cid=document.getElementById('bulk_target').value;
-        let n=0;
-        for(const id of _cardsSelection){
-          const c=u.cards.find(x=>x.id===id);
-          if(c&&c.collectionId!==cid){c.collectionId=cid;touchCard(c);n++}
-        }
-        _cardsSelection.clear();
-        saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
-        toast(n+' carte(s) déplacée(s) ✓','ok');
-      });
-    });
+  if(!u||!u.collections||u.collections.length===0){toast('Aucune collection','err');return}
+  /* Si tous les ids sont dans la même collection, exclu-la (rien à faire) */
+  const cards=ids.map(id=>(u.cards||[]).find(c=>c.id===id)).filter(Boolean);
+  if(!cards.length)return;
+  const sourceColl=cards.every(c=>c.collectionId===cards[0].collectionId)?cards[0].collectionId:null;
+  const targets=u.collections.filter(c=>c.id!==sourceColl);
+  if(targets.length===0){toast('Pas d\'autre collection disponible','err');return}
+  const sample=cards[0];
+  const sampleName=cards.length===1?esc(sample.name):cards.length+' cartes';
+  openModal('Déplacer '+sampleName,
+    '<div class="muted mb-10">Choisis la collection de destination :</div>'
+    +'<div class="move-list">'
+    +targets.map(c=>{
+      const count=(u.cards||[]).filter(x=>x.collectionId===c.id).length;
+      return '<div class="move-target" data-act="confirmMove" data-args="'+esc(JSON.stringify([c.id,ids]))+'" style="--cc:'+c.color+'">'
+        +'<div class="move-target-color"></div>'
+        +'<div class="move-target-info"><div class="move-target-name">'+esc(c.name)+'</div>'
+        +'<div class="muted" style="font-size:11px">'+count+' carte(s)</div></div>'
+        +'<div class="move-target-arrow">→</div></div>';
+    }).join('')
+    +'</div>'
+    +'<button class="btn btn-ghost btn-block mt-10" data-act="closeModal">Annuler</button>'
+  );
+}
+
+function confirmMove(targetId,ids){
+  const u=getUser();if(!u)return;
+  let n=0;
+  for(const id of ids){
+    const c=(u.cards||[]).find(x=>x.id===id);
+    if(c&&c.collectionId!==targetId){c.collectionId=targetId;touchCard(c);n++}
+  }
+  if(_cardsSelection&&_cardsSelection.has)_cardsSelection.clear();
+  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+  toast(n+' carte(s) déplacée(s) ✓','ok');
 }
 
 function bulkExport(){
@@ -4770,6 +4875,7 @@ function bootApp(){
   applyTheme();
   updateHeader();
   _adaptHeaderToSidebar();
+  _wireCardDragToCollections();
   renderCollections();
   if(STATE.config.gistId){
     setSyncStatus('⏳ Pull…','pending');
@@ -4795,7 +4901,8 @@ registerActions({
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
   switchView,
   cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport,
-  applyPreset,saveTheme,resetTheme
+  applyPreset,saveTheme,resetTheme,
+  moveCard,confirmMove
 });
 
 /* ==================== WIRING ==================== */
