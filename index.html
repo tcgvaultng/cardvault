@@ -2304,23 +2304,100 @@ function renderBrowse(){
   const game=gameSel.value, lang=langSel.value;
   const filter=(document.getElementById('browseFilter').value||'').toLowerCase().trim();
 
+  /* Helpers communs (utilises pour vue index ET detail) */
+  const normSc=s=>{
+    if(!s)return '';
+    let r=String(s).toLowerCase().replace(/pt/g,'.').replace(/[\-_]/g,'');
+    r=r.replace(/(\d+)/g,n=>parseInt(n,10).toString());
+    r=r.replace(/\./g,'');
+    return r;
+  };
+  const fromImg=url=>{
+    if(!url)return null;
+    const m=String(url).match(/\/([^\/]+)\.(?:webp|png|jpg|jpeg)(?:\?|$)/i);
+    if(!m)return null;
+    const stem=decodeURIComponent(m[1]);
+    const m2=stem.match(/^(.+)-([A-Za-z0-9_]+)$/);
+    if(!m2)return null;
+    return {sc:m2[1].toLowerCase(),num:m2[2].replace(/^0+/,'').toLowerCase()};
+  };
+  /* Calcule les cartes possedees pour ce game (cross-langue) */
+  const u=getUser();
+  const ownedAnyLang=new Map(); /* nsc -> Set(num) */
+  const ownedBySet=new Map();   /* nsc -> Set(num) restricted to current lang */
+  if(u&&u.cards){
+    for(const c of u.cards){
+      if(c.game!==game)continue;
+      let sc=(c.setCode||'').toLowerCase();
+      let num=String(c.number||'').replace(/^0+/,'').toLowerCase();
+      if((!sc||!num)&&_libCardIdFor(c)){
+        const m=String(_libCardIdFor(c)).match(/^(.+)-([A-Za-z0-9_]+)$/);
+        if(m){
+          if(!sc)sc=m[1].toLowerCase();
+          if(!num)num=m[2].replace(/^0+/,'').toLowerCase();
+        }
+      }
+      if((!sc||!num)&&c.image){
+        const f=fromImg(c.image);
+        if(f){
+          if(!sc)sc=f.sc;
+          if(!num)num=f.num;
+        }
+      }
+      if(!sc||!num)continue;
+      const nsc=normSc(sc);
+      if(!ownedAnyLang.has(nsc))ownedAnyLang.set(nsc,new Set());
+      ownedAnyLang.get(nsc).add(num);
+      if((c.lang||'en')===lang){
+        if(!ownedBySet.has(nsc))ownedBySet.set(nsc,new Set());
+        ownedBySet.get(nsc).add(num);
+      }
+    }
+  }
+
   /* Si on a un set selectionne, afficher les cartes de ce set */
   if(_browseState.selectedSet){
     const setCode=_browseState.selectedSet;
+    const setNsc=normSc(setCode);
     const cards=searchLibrary(game,'',lang,{set:setCode}).slice(0,500);
     cards.sort((a,b)=>{
       const na=parseInt((a.number||'').replace(/\D/g,''))||999;
       const nb=parseInt((b.number||'').replace(/\D/g,''))||999;
       return na-nb;
     });
+    const ownedSet=ownedAnyLang.get(setNsc)||new Set();
+    let ownedCount=0;
+    for(const c of cards){
+      const num=String(c.number||'').replace(/^0+/,'').toLowerCase();
+      c._owned=ownedSet.has(num);
+      if(c._owned)ownedCount++;
+    }
     const setName=cards[0]?.set||setCode.toUpperCase();
+    /* Filtre haut : Tout / Possedees / Manquantes */
+    const filterMode=_browseState.filterMode||'all';
+    let filtered=cards;
+    if(filterMode==='owned')filtered=cards.filter(c=>c._owned);
+    else if(filterMode==='missing')filtered=cards.filter(c=>!c._owned);
     box.innerHTML='<button class="btn btn-ghost btn-sm mb-10" data-act="browseBack">← Retour aux extensions</button>'
-      +'<h3 style="font-family:Cinzel,serif;color:var(--gold-2)">'+esc(setName)+' <span class="muted" style="font-size:14px">('+cards.length+' cartes)</span></h3>'
+      +'<h3 style="font-family:Cinzel,serif;color:var(--gold-2);margin-bottom:6px">'+esc(setName)+' <span class="muted" style="font-size:14px">('+ownedCount+' / '+cards.length+')</span></h3>'
+      +'<div class="segmented mb-10">'
+      +'<button class="'+(filterMode==='all'?'active':'')+'" data-act="browseFilterMode" data-args="[\"all\"]">Tout ('+cards.length+')</button>'
+      +'<button class="'+(filterMode==='owned'?'active':'')+'" data-act="browseFilterMode" data-args="[\"owned\"]">✓ Possédées ('+ownedCount+')</button>'
+      +'<button class="'+(filterMode==='missing'?'active':'')+'" data-act="browseFilterMode" data-args="[\"missing\"]">✗ Manquantes ('+(cards.length-ownedCount)+')</button>'
+      +'</div>'
       +'<div class="coll-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">'
-      +cards.map((c,i)=>{
+      +filtered.map((c,i)=>{
         const cidx=_browseCacheCard(c);
-        return '<div class="coll-card" data-act="browsePickCard" data-args="'+esc(JSON.stringify([cidx]))+'" style="padding:6px;min-height:auto">'
-          +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;border-radius:6px;display:block">'
+        const owned=c._owned;
+        const overlay=owned
+          ?'<div style="position:absolute;top:6px;right:6px;background:var(--green);color:#fff;font-size:14px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.5)">✓</div>'
+          :'';
+        const imgStyle=owned?'':'filter:grayscale(75%) brightness(.55);';
+        return '<div class="coll-card" data-act="browsePickCard" data-args="'+esc(JSON.stringify([cidx]))+'" style="padding:6px;min-height:auto;position:relative;'+(owned?'border-color:var(--green)':'opacity:.85')+'">'
+          +'<div style="position:relative">'
+          +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;border-radius:6px;display:block;'+imgStyle+'">'
+          +overlay
+          +'</div>'
           +'<div style="font-size:11px;text-align:center;margin-top:4px;color:var(--text-dim)">#'+esc(c.number||'?')+'</div>'
           +'<div style="font-size:12px;text-align:center;font-weight:600">'+esc(c.name||cidx)+'</div>'
           +'</div>';
@@ -2355,59 +2432,7 @@ function renderBrowse(){
     s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
     if(meta.name&&!s.namedFromManifest)s.name=meta.name;
   }
-  /* Normalise un setCode pour matcher entre APIs (pokemontcg.io vs TCGdex). */
-  const normSc=s=>{
-    if(!s)return '';
-    let r=String(s).toLowerCase().replace(/pt/g,'.').replace(/[\-_]/g,'');
-    r=r.replace(/(\d+)/g,n=>parseInt(n,10).toString());
-    r=r.replace(/\./g,'');
-    return r;
-  };
-  /* Extrait setCode + number d'une URL d'image R2 ou autre.
-     Ex: "https://...r2.dev/fr/sv03.5_151/sv03.5-004.webp" -> {sc:"sv03.5", num:"4"} */
-  const fromImg=url=>{
-    if(!url)return null;
-    const m=String(url).match(/\/([^\/]+)\.(?:webp|png|jpg|jpeg)(?:\?|$)/i);
-    if(!m)return null;
-    const stem=decodeURIComponent(m[1]);
-    const m2=stem.match(/^(.+)-([A-Za-z0-9_]+)$/);
-    if(!m2)return null;
-    return {sc:m2[1].toLowerCase(),num:m2[2].replace(/^0+/,'').toLowerCase()};
-  };
-  /* Compte les cartes possedees par setCode normalise (cross-langue + cross-API) */
-  const u=getUser();
-  const ownedBySet=new Map();
-  const ownedAnyLang=new Map();
-  if(u&&u.cards){
-    for(const c of u.cards){
-      if(c.game!==game)continue;
-      let sc=(c.setCode||'').toLowerCase();
-      let num=String(c.number||'').replace(/^0+/,'').toLowerCase();
-      if((!sc||!num)&&_libCardIdFor(c)){
-        const m=String(_libCardIdFor(c)).match(/^(.+)-([A-Za-z0-9_]+)$/);
-        if(m){
-          if(!sc)sc=m[1].toLowerCase();
-          if(!num)num=m[2].replace(/^0+/,'').toLowerCase();
-        }
-      }
-      /* Fallback ultime : parse l'URL de l'image */
-      if((!sc||!num)&&c.image){
-        const f=fromImg(c.image);
-        if(f){
-          if(!sc)sc=f.sc;
-          if(!num)num=f.num;
-        }
-      }
-      if(!sc||!num)continue;
-      const nsc=normSc(sc);
-      if(!ownedAnyLang.has(nsc))ownedAnyLang.set(nsc,new Set());
-      ownedAnyLang.get(nsc).add(num);
-      if((c.lang||'en')===lang){
-        if(!ownedBySet.has(nsc))ownedBySet.set(nsc,new Set());
-        ownedBySet.get(nsc).add(num);
-      }
-    }
-  }
+  /* ownedAnyLang / ownedBySet calcules en haut de la fonction (vue index + vue detail) */
   for(const s of sets.values()){
     const nsc=normSc(s.code);
     const langOwned=(ownedBySet.get(nsc)||new Set()).size;
