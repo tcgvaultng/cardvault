@@ -957,15 +957,27 @@ function mergeUsers(L,R){
 function mergeOneUser(a,b){
   const at=a.updatedAt||0,bt=b.updatedAt||0;
   const newer=bt>at?b:a;
+  /* Merge des tombstones (cles -> timestamp max) */
+  const dCards=mergeTombstones(a.deletedCards||{},b.deletedCards||{});
+  const dColls=mergeTombstones(a.deletedCollections||{},b.deletedCollections||{});
   return {
     avatar:newer.avatar||a.avatar||b.avatar||'🃏',
     createdAt:Math.min(a.createdAt||Date.now(),b.createdAt||Date.now()),
     updatedAt:Math.max(at,bt),
-    collections:mergeById(a.collections||[],b.collections||[]),
-    cards:mergeCards(a.cards||[],b.cards||[])
+    collections:mergeById(a.collections||[],b.collections||[],dColls),
+    cards:mergeCards(a.cards||[],b.cards||[],dCards),
+    deletedCards:dCards,
+    deletedCollections:dColls,
   };
 }
-function mergeById(A,B){
+function mergeTombstones(A,B){
+  const out={};
+  for(const k in A)out[k]=A[k];
+  for(const k in B)out[k]=Math.max(out[k]||0,B[k]);
+  return out;
+}
+function mergeById(A,B,tombstones){
+  tombstones=tombstones||{};
   const m=new Map();
   for(const x of A)m.set(x.id,x);
   for(const y of B){
@@ -973,10 +985,21 @@ function mergeById(A,B){
     if(!ex){m.set(y.id,y);continue}
     m.set(y.id,(y.updatedAt||0)>=(ex.updatedAt||0)?y:ex);
   }
-  return Array.from(m.values());
+  /* Filtre les tombstoned (cle = id pour collections) */
+  const out=[];
+  for(const [id,c] of m){
+    const tombAt=tombstones[id];
+    if(tombAt){
+      const cAt=c.updatedAt||c.createdAt||0;
+      if(tombAt>=cAt)continue;
+    }
+    out.push(c);
+  }
+  return out;
 }
 function cardKey(c){return (c.game||'')+':::'+((c.name||'').toLowerCase())+':::'+((c.set||'').toLowerCase())+':::'+(c.collectionId||'')}
-function mergeCards(A,B){
+function mergeCards(A,B,tombstones){
+  tombstones=tombstones||{};
   const m=new Map();
   for(const x of A)m.set(cardKey(x),x);
   for(const y of B){
@@ -986,7 +1009,19 @@ function mergeCards(A,B){
     const et=ex.updatedAt||ex.addedAt||0;
     m.set(k,yt>=et?y:ex);
   }
-  return Array.from(m.values());
+  /* Filtre les cartes tombstoned (par id ou par cardKey) */
+  const out=[];
+  for(const [k,c] of m){
+    const tombByKey=tombstones[k];
+    const tombById=tombstones[c.id];
+    const tombAt=Math.max(tombByKey||0,tombById||0);
+    if(tombAt){
+      const cAt=c.updatedAt||c.addedAt||0;
+      if(tombAt>=cAt)continue;
+    }
+    out.push(c);
+  }
+  return out;
 }
 function touchActiveUser(){const u=STATE.users[STATE.activeUser];if(u)u.updatedAt=Date.now()}
 function touchCard(c){c.updatedAt=Date.now();touchActiveUser()}
@@ -1270,6 +1305,17 @@ function renameCollection(cid){
 function deleteCollection(cid){
   if(!confirm('Supprimer cette collection et toutes ses cartes ?'))return;
   const u=getUser();
+  const now=Date.now();
+  u.deletedCollections=u.deletedCollections||{};
+  u.deletedCards=u.deletedCards||{};
+  u.deletedCollections[cid]=now;
+  /* Tombstone aussi toutes les cartes de cette collection */
+  for(const c of (u.cards||[])){
+    if(c.collectionId===cid){
+      u.deletedCards[c.id]=now;
+      u.deletedCards[cardKey(c)]=now;
+    }
+  }
   u.collections=u.collections.filter(x=>x.id!==cid);
   u.cards=(u.cards||[]).filter(c=>c.collectionId!==cid);
   touchActiveUser();
@@ -1381,7 +1427,14 @@ async function refreshPrice(id){
 function deleteCard(id){
   if(!confirm('Supprimer cette carte ?'))return;
   const u=getUser();
-  u.cards=(u.cards||[]).filter(c=>c.id!==id);
+  const c=(u.cards||[]).find(x=>x.id===id);
+  if(c){
+    const now=Date.now();
+    u.deletedCards=u.deletedCards||{};
+    u.deletedCards[id]=now;
+    u.deletedCards[cardKey(c)]=now;
+  }
+  u.cards=(u.cards||[]).filter(x=>x.id!==id);
   touchActiveUser();
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Supprimée ✓','ok');
 }
