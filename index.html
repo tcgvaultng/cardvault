@@ -407,6 +407,7 @@ img.err-hide{visibility:hidden}
         <div class="panel-title">📚 Library partagée</div>
         <div class="muted">~83 000 cartes Pokemon + One Piece + MTG en haute-rés (R2).</div>
         <button class="btn btn-violet btn-block mt-10" data-act="refreshLibraryAndCollection">🔄 Mettre à jour les visuels de ma collection</button>
+        <button class="btn btn-primary btn-block mt-10" data-act="refreshAllPrices">💶 Mettre à jour tous les prix (Cardmarket via API)</button>
         <button class="btn btn-ghost btn-block mt-10" data-act="forceFullReload">🚨 Force update du site (efface caches + Service Worker)</button>
         <div class="hint mt-10">Si la recherche ne renvoie pas les bons résultats, clique sur "Force update" pour récupérer la dernière version.</div>
       </div>
@@ -1815,6 +1816,44 @@ async function refreshPrice(id){
   finally{hideLoader()}
 }
 
+let _bulkPriceInFlight=false;
+async function refreshAllPrices(){
+  if(_bulkPriceInFlight){toast('MAJ déjà en cours','err');return}
+  const u=getUser();
+  if(!u||!u.cards||!u.cards.length){toast('Aucune carte','err');return}
+  if(!confirm('Mettre à jour les prix de '+u.cards.length+' cartes via Scryfall/pokemontcg.io ?\n\nCardmarket EUR pour MTG, Cardmarket EUR pour Pokemon EN, prix non dispo pour One Piece.\n\nDurée : ~'+Math.ceil(u.cards.length/4)+'s.'))return;
+  _bulkPriceInFlight=true;
+  showLoader('Préparation…');
+  try{
+    /* Concurrence limitee a 4 (eviter rate limits Scryfall/pokemontcg.io) */
+    const cards=u.cards.slice();
+    let done=0,updated=0,fail=0;
+    const tick=()=>{const ld=document.getElementById('__loader');if(ld)ld.querySelector('div:last-child').textContent='Prix : '+done+'/'+cards.length+' (actualises : '+updated+')'};
+    tick();
+    const workers=Array.from({length:4},async()=>{
+      while(cards.length>0){
+        const c=cards.shift();
+        if(!c)break;
+        try{
+          const res=await searchCards(c.game,c.name,c.lang||'en',3,{set:c.set||'',number:c.number||''});
+          if(res.length>0&&res[0].price!=null){
+            const newP=res[0].price;
+            if(c.price!==newP){c.price=newP;c.updatedAt=Date.now();updated++}
+          }
+        }catch(_){fail++}
+        done++;
+        tick();
+        if(done%20===0)saveLocal();
+      }
+    });
+    await Promise.all(workers);
+    saveLocal();scheduleSync();
+    renderCollections();renderAllCards();
+    toast('Prix MAJ : '+updated+' modifiés ('+done+' total, '+fail+' erreurs)','ok');
+  }catch(e){toast('Erreur: '+e.message,'err')}
+  finally{_bulkPriceInFlight=false;hideLoader()}
+}
+
 function deleteCard(id){
   if(!confirm('Supprimer cette carte ?'))return;
   const u=getUser();
@@ -3044,7 +3083,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
+  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
   switchView
 });
