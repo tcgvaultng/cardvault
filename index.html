@@ -325,6 +325,24 @@ img.err-hide{visibility:hidden}
       </div>
     </section>
 
+    <section id="view-browse" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Parcourir les extensions</h2>
+      <div class="row">
+        <div class="field">
+          <label>Jeu</label>
+          <select id="browseGame"></select>
+        </div>
+        <div class="field">
+          <label>Langue</label>
+          <select id="browseLang"></select>
+        </div>
+      </div>
+      <div class="field">
+        <input id="browseFilter" placeholder="Filtrer extension par nom…">
+      </div>
+      <div id="browseContent"></div>
+    </section>
+
     <section id="view-cards" class="view">
       <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Toutes mes cartes</h2>
       <div class="field">
@@ -390,10 +408,11 @@ img.err-hide{visibility:hidden}
   </main>
 
   <nav class="tabbar" id="tabbar">
-    <button data-view="collections" class="active"><span class="ic">📚</span>Collections</button>
+    <button data-view="collections" class="active"><span class="ic">📚</span>Coll.</button>
     <button data-view="add"><span class="ic">➕</span>Ajouter</button>
+    <button data-view="browse"><span class="ic">🗂️</span>Parcourir</button>
     <button data-view="cards"><span class="ic">🔎</span>Cartes</button>
-    <button data-view="compare"><span class="ic">⚖️</span>Comparer</button>
+    <button data-view="compare"><span class="ic">⚖️</span>Comp.</button>
     <button data-view="config"><span class="ic">⚙️</span>Config</button>
   </nav>
 </div>
@@ -984,6 +1003,7 @@ function switchView(name){
   const btn=document.querySelector('.tabbar button[data-view="'+name+'"]');
   if(btn)btn.classList.add('active');
   if(name==='collections')renderCollections();
+  if(name==='browse')renderBrowse();
   if(name==='cards')renderAllCards();
   if(name==='compare')renderCompare();
   if(name==='config')renderConfig();
@@ -2248,6 +2268,125 @@ async function captureCard(){
   }
 }
 
+/* ==================== BROWSE (parcourir les extensions de la library) ==================== */
+let _browseState={game:'pokemon',lang:'fr',selectedSet:null};
+
+function renderBrowse(){
+  const gameSel=document.getElementById('browseGame');
+  const langSel=document.getElementById('browseLang');
+  const box=document.getElementById('browseContent');
+  if(!gameSel||!langSel||!box)return;
+
+  /* Initialiser les selects la 1ere fois */
+  if(!gameSel.dataset.init){
+    gameSel.innerHTML=Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('');
+    gameSel.value=_browseState.game;
+    gameSel.dataset.init='1';
+    gameSel.addEventListener('change',()=>{_browseState.game=gameSel.value;_browseState.selectedSet=null;_refreshBrowseLangs();renderBrowse()});
+    langSel.addEventListener('change',()=>{_browseState.lang=langSel.value;_browseState.selectedSet=null;renderBrowse()});
+    document.getElementById('browseFilter').addEventListener('input',()=>renderBrowse());
+    _refreshBrowseLangs();
+  }
+
+  if(!_libManifest){
+    box.innerHTML='<div class="empty"><div class="ic">⏳</div><h3>Chargement de la library…</h3></div>';
+    loadLibraryManifest().then(()=>renderBrowse()).catch(()=>{});
+    return;
+  }
+
+  const game=gameSel.value, lang=langSel.value;
+  const filter=(document.getElementById('browseFilter').value||'').toLowerCase().trim();
+
+  /* Si on a un set selectionne, afficher les cartes de ce set */
+  if(_browseState.selectedSet){
+    const setCode=_browseState.selectedSet;
+    const cards=searchLibrary(game,'',lang,{set:setCode}).slice(0,500);
+    cards.sort((a,b)=>{
+      const na=parseInt((a.number||'').replace(/\D/g,''))||999;
+      const nb=parseInt((b.number||'').replace(/\D/g,''))||999;
+      return na-nb;
+    });
+    const setName=cards[0]?.set||setCode.toUpperCase();
+    box.innerHTML='<button class="btn btn-ghost btn-sm mb-10" data-act="browseBack">← Retour aux extensions</button>'
+      +'<h3 style="font-family:Cinzel,serif;color:var(--gold-2)">'+esc(setName)+' <span class="muted" style="font-size:14px">('+cards.length+' cartes)</span></h3>'
+      +'<div class="coll-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">'
+      +cards.map((c,i)=>{
+        const cidx=_browseCacheCard(c);
+        return '<div class="coll-card" data-act="browsePickCard" data-args="'+esc(JSON.stringify([cidx]))+'" style="padding:6px;min-height:auto">'
+          +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;border-radius:6px;display:block">'
+          +'<div style="font-size:11px;text-align:center;margin-top:4px;color:var(--text-dim)">#'+esc(c.number||'?')+'</div>'
+          +'<div style="font-size:12px;text-align:center;font-weight:600">'+esc(c.name||cidx)+'</div>'
+          +'</div>';
+      }).join('')+'</div>';
+    return;
+  }
+
+  /* Vue d'index : grouper par setCode */
+  const sets=new Map(); // setCode -> {name, code, count, sample(image)}
+  for(const [key,entry] of Object.entries(_libManifest.cards)){
+    const parts=key.split('|',3);
+    if(parts.length<3)continue;
+    if(parts[0]!==game)continue;
+    if(parts[1]!==lang)continue;
+    if(typeof entry!=='object')continue;
+    const sc=(entry.s||parts[2].split('-')[0]||'').toLowerCase();
+    if(!sc)continue;
+    if(!sets.has(sc))sets.set(sc,{code:sc,name:entry.sn||sc.toUpperCase(),count:0,sample:''});
+    const s=sets.get(sc);
+    s.count++;
+    if(!s.sample&&entry.p){
+      s.sample=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
+    }
+    if(entry.sn&&!s.namedFromManifest){s.name=entry.sn;s.namedFromManifest=true}
+  }
+  let arr=Array.from(sets.values());
+  if(filter)arr=arr.filter(s=>s.name.toLowerCase().includes(filter)||s.code.includes(filter));
+  arr.sort((a,b)=>a.name.localeCompare(b.name));
+
+  if(arr.length===0){
+    box.innerHTML='<div class="empty"><div class="ic">🗂️</div><h3>Aucune extension</h3><p class="muted">Pas de cartes pour '+game+' / '+lang+' dans la library.</p></div>';
+    return;
+  }
+
+  box.innerHTML='<div class="muted mb-10">'+arr.length+' extensions • '+arr.reduce((s,x)=>s+x.count,0)+' cartes</div>'
+    +'<div class="coll-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">'
+    +arr.map(s=>{
+      return '<div class="coll-card" data-act="browseOpenSet" data-args="'+esc(JSON.stringify([s.code]))+'" style="padding:8px">'
+        +'<img src="'+esc(s.sample||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;height:160px;object-fit:contain;border-radius:6px;background:rgba(0,0,0,.3)">'
+        +'<div style="margin-top:6px;font-family:Cinzel,serif;font-size:13px;line-height:1.2">'+esc(s.name)+'</div>'
+        +'<div style="font-size:11px;color:var(--gold-2);margin-top:2px">'+s.code.toUpperCase()+' • '+s.count+' cartes</div>'
+        +'</div>';
+    }).join('')+'</div>';
+}
+
+function _refreshBrowseLangs(){
+  const gameSel=document.getElementById('browseGame');
+  const langSel=document.getElementById('browseLang');
+  const game=gameSel.value;
+  const langs=GAMES[game]?.langs||['en'];
+  langSel.innerHTML=langs.map(k=>'<option value="'+k+'">'+(LANGS[k]?.label||k)+'</option>').join('');
+  if(!langs.includes(_browseState.lang))_browseState.lang=langs[0];
+  langSel.value=_browseState.lang;
+}
+
+let _browseCardCache=[];
+function _browseCacheCard(c){return _browseCardCache.push(c)-1}
+
+function browseOpenSet(setCode){
+  _browseState.selectedSet=setCode;
+  _browseCardCache=[];
+  renderBrowse();
+}
+function browseBack(){
+  _browseState.selectedSet=null;
+  renderBrowse();
+}
+function browsePickCard(idx){
+  const c=_browseCardCache[idx];
+  if(!c)return;
+  chooseCollectionAndAdd(c);
+}
+
 /* ==================== COMPARE ==================== */
 function renderCompare(){
   const pseudos=Object.keys(STATE.users);
@@ -2405,6 +2544,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
+  browseOpenSet,browseBack,browsePickCard,
   switchView
 });
 
