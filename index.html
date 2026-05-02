@@ -1020,7 +1020,7 @@ function _libCardIdFor(c){
 }
 
 /* Enrichit les cartes (tous jeux) avec image R2 + nom de set/setCode/numero depuis le manifest */
-function applyLibraryToResults(cards){
+function applyLibraryToResults(cards,preferredLang){
   if(!_libManifest||!Array.isArray(cards))return cards;
   for(const c of cards){
     const cardId=_libCardIdFor(c);
@@ -1033,7 +1033,13 @@ function applyLibraryToResults(cards){
         if(!c.number)c.number=m[2];
       }
     }
-    const entry=_libEntryFor(c.game,c.lang,cardId);
+    /* Cherche d'abord dans la langue demandée par l'utilisateur, puis fallback c.lang */
+    let entry=preferredLang?_libEntryFor(c.game,preferredLang,cardId):null;
+    let entryLang=preferredLang;
+    if(!entry||typeof entry!=='object'){
+      entry=_libEntryFor(c.game,c.lang,cardId);
+      entryLang=c.lang;
+    }
     if(!entry||typeof entry!=='object')continue;
     if(entry.p){
       c.image=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
@@ -1041,6 +1047,14 @@ function applyLibraryToResults(cards){
     if(entry.sn&&!c.set)c.set=entry.sn;
     if(entry.s&&!c.setCode)c.setCode=entry.s;
     if(entry.no&&!c.number)c.number=entry.no;
+    /* Si on a trouvé une entrée dans la langue demandée et que c'est différent du c.lang
+       (Scryfall a fallback EN car FR pas dispo, ou pokemontcg.io n'a que EN), on substitue le nom */
+    if(entry.n&&entryLang===preferredLang&&entryLang!==c.lang){
+      c.printedName=entry.n;
+      c.lang=preferredLang;
+    } else if(entry.n&&!c.printedName){
+      c.printedName=entry.n;
+    }
   }
   return cards;
 }
@@ -2429,7 +2443,7 @@ async function searchPokemon(q,lang,limit,opts){
 /* Fusionne resultats API avec library (ajoute les cartes que l'API n'a pas, override images) */
 function mergeWithLibrary(apiCards,game,q,lang,opts,limit){
   const out=Array.isArray(apiCards)?apiCards.slice():[];
-  applyLibraryToResults(out);
+  applyLibraryToResults(out,lang);
   if(!_libManifest)return out;
   const seen=new Set(out.map(c=>(_libCardIdFor(c)||'').toLowerCase()));
   const libExtra=searchLibrary(game,q,lang,opts).filter(c=>!seen.has((_libCardIdFor(c)||'').toLowerCase()));
