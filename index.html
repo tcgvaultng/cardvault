@@ -232,7 +232,7 @@ img[data-zoom]{cursor:zoom-in}
 .loader{position:fixed;inset:0;background:rgba(11,6,24,.8);z-index:150;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:var(--text-dim);font-family:'Cinzel',serif;letter-spacing:.08em;font-size:13px;text-transform:uppercase}
 .loader .spinner{width:42px;height:42px;border-width:3px}
 
-.card-detail img{width:100%;max-width:300px;border-radius:10px;display:block;margin:0 auto 14px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.card-detail img{width:100%;max-width:240px;border-radius:10px;display:block;margin:0 auto 14px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 .card-detail .price-big{text-align:center;font-family:'Cinzel',serif;font-size:32px;color:var(--gold-2);margin-bottom:12px}
 .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
 .meta-item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px}
@@ -297,7 +297,7 @@ img.err-hide{visibility:hidden}
   .modal{max-width:720px;border-radius:var(--radius-lg)}
   /* Card list 2 colonnes */
   #allCardsList,#manualList .search-res,.search-res{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
-  .card-detail img{max-width:340px}
+  .card-detail img{max-width:260px}
 }
 
 /* ==================== DESKTOP / PC (≥1100px) ==================== */
@@ -353,8 +353,8 @@ img.err-hide{visibility:hidden}
   .card-row{padding:12px 14px}
   .card-row img{width:60px;height:84px;flex-shrink:0}
   .card-row .nm{font-size:15px}
-  /* Card detail : 2 colonnes (image grande gauche 60%, infos+actions droite 40%) */
-  .card-detail{display:grid;grid-template-columns:minmax(300px,60%) 1fr;gap:24px;align-items:start}
+  /* Card detail : 2 colonnes (image compact gauche 320px, infos+actions droite) */
+  .card-detail{display:grid;grid-template-columns:320px 1fr;gap:28px;align-items:start}
   /* Image + bouton flip restent en col 1 */
   .card-detail > #cardImgWrap,.card-detail > #addImgWrap{grid-column:1;grid-row:1;align-self:start}
   .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1;grid-row:2}
@@ -362,9 +362,9 @@ img.err-hide{visibility:hidden}
   .card-detail > *{grid-column:2}
   .card-detail > #cardImgWrap,.card-detail > #addImgWrap,
   .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1}
-  .card-detail img{max-width:100%}
-  /* Modal carte : préfère la largeur moderne */
-  .modal:has(.card-detail){max-width:1080px}
+  .card-detail img{max-width:300px}
+  /* Modal carte : largeur raisonnable (pas géante) */
+  .modal:has(.card-detail){max-width:880px}
   /* Forms longs : limite max-width pour lisibilité */
   .panel form,.panel .field-group{max-width:760px}
   .sync-status{max-width:240px;font-size:12px}
