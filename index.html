@@ -517,6 +517,58 @@ async function requestPersistentStorage(){
     }
   }catch(e){console.warn('persist() failed:',e)}
 }
+
+/* ==================== LIBRARY POKEMON (R2 partagee) ==================== */
+const LIBRARY_MANIFEST_URL='https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev/manifest.json';
+const LIBRARY_TTL_MS=24*3600*1000; // 24h cache
+let _libManifest=null;
+let _libManifestPromise=null;
+
+async function loadLibraryManifest(){
+  if(_libManifest)return _libManifest;
+  if(_libManifestPromise)return _libManifestPromise;
+  _libManifestPromise=(async()=>{
+    /* Cache IndexedDB */
+    try{
+      const cached=await idbGet('library_manifest');
+      if(cached&&cached._cachedAt&&(Date.now()-cached._cachedAt)<LIBRARY_TTL_MS){
+        _libManifest=cached;return cached;
+      }
+    }catch(_){}
+    /* Fetch reseau */
+    try{
+      const r=await fetch(LIBRARY_MANIFEST_URL,{cache:'no-cache'});
+      if(!r.ok)return null;
+      const m=await r.json();
+      m._cachedAt=Date.now();
+      _libManifest=m;
+      idbSet('library_manifest',m);
+      return m;
+    }catch(e){console.warn('library manifest fetch failed',e);return null}
+    finally{_libManifestPromise=null}
+  })();
+  return _libManifestPromise;
+}
+
+function libraryUrlFor(lang,cardId){
+  if(!_libManifest||!cardId)return null;
+  const l=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
+  const key=l+'|'+String(cardId).toLowerCase();
+  const path=_libManifest.cards&&_libManifest.cards[key];
+  if(!path)return null;
+  return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
+}
+
+/* Override image dans une liste de cartes Pokemon avec l'URL library si dispo */
+function applyLibraryToResults(cards){
+  if(!_libManifest||!Array.isArray(cards))return cards;
+  for(const c of cards){
+    if(c.game!=='pokemon')continue;
+    const url=libraryUrlFor(c.lang,c._pokeId);
+    if(url)c.image=url;
+  }
+  return cards;
+}
 function uid(){return Math.random().toString(36).slice(2,11)+Date.now().toString(36)}
 function fmtEur(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -1773,6 +1825,8 @@ async function pokeFetchFallback(tcgdexId,fallbackNumber){
 async function searchPokemon(q,lang,limit,opts){
   const L=LANGS[lang]||LANGS.en;
   opts=opts||{};
+  /* Charge le manifest library en parallele (lazy, cache 24h) */
+  const libPromise=loadLibraryManifest();
   // EN → pokemontcg.io (avec prix, syntaxe Lucene)
   if(lang==='en'){
     const qParts=[];
@@ -1786,13 +1840,15 @@ async function searchPokemon(q,lang,limit,opts){
     const r=await fetch('https://api.pokemontcg.io/v2/cards?q='+encodeURIComponent(qParts.join(' '))+'&pageSize='+Math.min(limit,250));
     if(!r.ok)throw new Error('PokéTCG HTTP '+r.status);
     const j=await r.json();
-    return (j.data||[]).map(c=>{
+    await libPromise;
+    const out=(j.data||[]).map(c=>{
       const cm=c.cardmarket?.prices;
       const tp=c.tcgplayer?.prices;
       const tpMarket=tp?Object.values(tp)[0]?.market:null;
       const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
       return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
     });
+    return applyLibraryToResults(out);
   }
   // Autres langues → TCGdex
   if(!L.tcgdex)return [];
@@ -1867,7 +1923,8 @@ async function searchPokemon(q,lang,limit,opts){
       if(p!=null)card.price=Math.round(p*100)/100;
     }catch(_){}
   }));
-  return cards;
+  await libPromise;
+  return applyLibraryToResults(cards);
 }
 
 async function searchYugioh(q,lang,limit,opts){
@@ -2438,6 +2495,7 @@ refreshSearchLangs();
 /* ==================== INIT ==================== */
 loadLocal();
 requestPersistentStorage();
+loadLibraryManifest();  /* pre-load library Pokemon en arriere-plan */
 /* Recuperation IndexedDB si localStorage vide (navigateur l'a purge, etc.) */
 async function recoverFromIdbIfNeeded(){
   const empty=!STATE.users||Object.keys(STATE.users).length===0;
