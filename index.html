@@ -1920,14 +1920,41 @@ async function refreshAllPrices(){
             if(r0.price!=null&&c.price!==r0.price){c.price=r0.price;updated++}
             c.updatedAt=Date.now();
           }
-          /* Fallback JustTCG si toujours pas de prix (Pokemon FR/JA, One Piece) */
-          if((c.price==null||c.lang!=='en'&&c.game==='pokemon')&&STATE.config.justTcgKey){
+          /* Fallback Pokemon FR/JA: utiliser pokemontcg.io avec le cardId EN (les sets sont
+             identiques entre langues). Le prix EN sert d'approximation pour les autres langues. */
+          if(c.game==='pokemon'&&(c.lang||'en')!=='en'&&c.price==null){
+            const cid=c._pokeId||(c.setCode&&c.number?c.setCode+'-'+c.number:'');
+            if(cid){
+              const data=await pokeFetchFallback(cid,c.number);
+              if(data){
+                const cm=data.cardmarket?.prices;
+                const tp=data.tcgplayer?.prices;
+                const tpFirst=tp?Object.values(tp)[0]:null;
+                const prices={
+                  cm_eur:cm?.averageSellPrice||null,
+                  cm_eur_trend:cm?.trendPrice||null,
+                  cm_eur_low:cm?.lowPrice||null,
+                  cm_eur_high:cm?.highPrice||null,
+                  tcg_usd:tpFirst?.market||null,
+                  _approx_lang:'en',
+                };
+                const p=prices.cm_eur||prices.cm_eur_trend||(prices.tcg_usd?prices.tcg_usd*0.92:null);
+                if(p!=null){
+                  c.prices=Object.assign({},c.prices||{},prices);
+                  c.price=Math.round(p*100)/100;
+                  c.updatedAt=Date.now();
+                  updated++;
+                }
+              }
+            }
+          }
+          /* Fallback JustTCG (si l'utilisateur l'a configure) */
+          if(c.price==null&&STATE.config.justTcgKey){
             const jp=await fetchJustTcgPrice(c.game,c.name,c.set,c.number,c.lang);
             if(jp!=null){
               c.prices=c.prices||{};
               c.prices.justtcg_eur=jp;
-              if(c.price==null){c.price=jp;updated++}
-              c.updatedAt=Date.now();
+              c.price=jp;updated++;c.updatedAt=Date.now();
             }
           }
         }catch(_){fail++}
