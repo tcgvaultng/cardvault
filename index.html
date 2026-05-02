@@ -378,6 +378,34 @@ img.err-hide{visibility:hidden}
   /* Bulk actions : aligné avec le contenu (sidebar à gauche, plus de tabbar en bas) */
   .bulk-actions{left:var(--sidebar-w);bottom:0;transition:left .2s ease}
 
+  /* === Topbar minimaliste sur desktop : juste le logo + titre, sync/user dans sidebar === */
+  .topbar{padding:14px 32px;justify-content:flex-start;background:transparent;border-bottom:1px solid rgba(255,255,255,.04)}
+  .topbar .brand{flex:1}
+
+  /* === User-chip + sync-indicator dans la sidebar (en bas) === */
+  .tabbar .user-chip.in-sidebar,.tabbar .sync-indicator.in-sidebar{
+    flex:0 0 auto;border-radius:8px;margin:1px 0;
+    padding:8px 12px;min-height:44px;
+    display:flex;align-items:center;gap:14px;
+    background:transparent;border:1px solid transparent;
+    overflow:hidden;white-space:nowrap;
+  }
+  /* Sync-indicator : push tout le groupe footer (sync+user) en bas */
+  .tabbar .sync-indicator.in-sidebar{
+    margin-top:auto;
+    padding:8px 12px 6px;min-height:36px;font-size:11px;
+    border-top:1px solid var(--border);
+  }
+  .tabbar .sync-indicator.in-sidebar .sync-dot{flex-shrink:0;width:14px;display:flex;justify-content:center}
+  .tabbar .sync-indicator.in-sidebar .sync-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s;max-width:none;color:var(--text-dim)}
+  .tabbar:hover .sync-indicator.in-sidebar .sync-status,.tabbar:focus-within .sync-indicator.in-sidebar .sync-status{opacity:1;transition-delay:.05s}
+
+  /* User-chip : juste après sync, en bas de la sidebar */
+  .tabbar .user-chip.in-sidebar:hover{background:rgba(255,255,255,.04);border-color:var(--border)}
+  .tabbar .user-chip.in-sidebar .av{width:32px;height:32px;flex-shrink:0;font-size:16px}
+  .tabbar .user-chip.in-sidebar .nm{flex:1;min-width:0;font-size:14px;color:var(--text);font-weight:500;opacity:0;transition:opacity .15s;max-width:none}
+  .tabbar:hover .user-chip.in-sidebar .nm,.tabbar:focus-within .user-chip.in-sidebar .nm{opacity:1;transition-delay:.05s}
+
   /* === Vue Ajouter en 2 colonnes : Upload+Scanner gauche, Recherche droite === */
   #view-add.active{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
   #view-add.active > h2{grid-column:1/-1;margin-bottom:0}
@@ -4481,10 +4509,48 @@ function updateHeader(){
   document.getElementById('userNm').textContent=STATE.activeUser||'—';
 }
 
+/* Sur desktop ≥1100px : déplace user-chip + sync-indicator dans la sidebar (bas).
+   Sur mobile/tablette : remet dans la topbar. Idempotent. */
+const _DESKTOP_MQ='(min-width:1100px)';
+let _adaptHeaderTimer=null;
+function _adaptHeaderToSidebar(){
+  const tabbar=document.getElementById('tabbar');
+  const topbar=document.querySelector('.topbar');
+  if(!tabbar||!topbar)return;
+  const userChip=document.querySelector('.user-chip');
+  const syncInd=document.querySelector('.sync-indicator');
+  const isDesktop=window.matchMedia(_DESKTOP_MQ).matches;
+  if(isDesktop){
+    /* Sync d'abord (sera au-dessus du user dans la sidebar), puis user-chip en bas */
+    if(syncInd&&syncInd.parentElement!==tabbar){
+      syncInd.classList.add('in-sidebar');
+      tabbar.appendChild(syncInd);
+    }
+    if(userChip&&userChip.parentElement!==tabbar){
+      userChip.classList.add('in-sidebar');
+      tabbar.appendChild(userChip);
+    }
+  } else {
+    if(userChip&&userChip.parentElement!==topbar){
+      userChip.classList.remove('in-sidebar');
+      topbar.appendChild(userChip);
+    }
+    if(syncInd&&syncInd.parentElement!==topbar){
+      syncInd.classList.remove('in-sidebar');
+      topbar.appendChild(syncInd);
+    }
+  }
+}
+window.addEventListener('resize',()=>{
+  clearTimeout(_adaptHeaderTimer);
+  _adaptHeaderTimer=setTimeout(_adaptHeaderToSidebar,150);
+});
+
 function bootApp(){
   document.getElementById('launch').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   updateHeader();
+  _adaptHeaderToSidebar();
   renderCollections();
   if(STATE.config.gistId){
     setSyncStatus('⏳ Pull…','pending');
