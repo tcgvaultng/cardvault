@@ -365,10 +365,11 @@ img.err-hide{visibility:hidden}
         <div id="cfgSyncStatus" class="hint mt-10"></div>
       </div>
       <div class="panel">
-        <div class="panel-title">📚 Library Pokémon</div>
-        <div class="muted">~51 000 cartes haute-rés partagées via R2.</div>
+        <div class="panel-title">📚 Library partagée</div>
+        <div class="muted">~83 000 cartes Pokemon + One Piece + MTG en haute-rés (R2).</div>
         <button class="btn btn-violet btn-block mt-10" data-act="refreshLibraryAndCollection">🔄 Mettre à jour les visuels de ma collection</button>
-        <div class="hint mt-10">Refetch le manifest et applique les dernières images / noms de set à toutes les cartes Pokémon de ta collection.</div>
+        <button class="btn btn-ghost btn-block mt-10" data-act="forceFullReload">🚨 Force update du site (efface caches + Service Worker)</button>
+        <div class="hint mt-10">Si la recherche ne renvoie pas les bons résultats, clique sur "Force update" pour récupérer la dernière version.</div>
       </div>
       <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
@@ -557,6 +558,28 @@ async function loadLibraryManifest(){
     return manifest;
   })();
   return _libManifestPromise;
+}
+
+/* Force update complet : unregister Service Worker + clear caches + reload */
+async function forceFullReload(){
+  if(!confirm('Force update du site ?\n\nÇa va :\n- Désinscrire le Service Worker\n- Vider tous les caches du navigateur\n- Recharger la page\n\nTes données (collections) sont sauvées dans le Gist, pas de perte.'))return;
+  try{
+    showLoader('Force update…');
+    /* Unregister Service Workers */
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs)await r.unregister();
+    }
+    /* Clear caches */
+    if('caches' in window){
+      const names=await caches.keys();
+      for(const n of names)await caches.delete(n);
+    }
+    /* Clear IndexedDB library_manifest */
+    try{await idbSet('library_manifest',null)}catch(_){}
+    /* Reload avec cache bypass */
+    location.reload();
+  }catch(e){toast('Erreur: '+e.message,'err')}
 }
 
 /* Force un refresh manuel : invalide le cache, refetch, applique a la collection */
@@ -2381,7 +2404,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,
+  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
   switchView
 });
 
