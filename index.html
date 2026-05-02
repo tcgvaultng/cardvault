@@ -546,23 +546,41 @@ function _libEntryPath(entry){
   return entry.p||null;
 }
 
-function libraryUrlFor(lang,cardId){
+function _libEntryFor(lang,cardId){
   if(!_libManifest||!cardId)return null;
   const l=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
   const key=l+'|'+String(cardId).toLowerCase();
-  const entry=_libManifest.cards&&_libManifest.cards[key];
+  return (_libManifest.cards||{})[key]||null;
+}
+
+function libraryUrlFor(lang,cardId){
+  const entry=_libEntryFor(lang,cardId);
   const path=_libEntryPath(entry);
   if(!path)return null;
   return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
 }
 
-/* Override image dans une liste de cartes Pokemon avec l'URL library si dispo */
+/* Enrichit les cartes Pokemon avec image R2 + nom de set/setCode/numero depuis le manifest */
 function applyLibraryToResults(cards){
   if(!_libManifest||!Array.isArray(cards))return cards;
   for(const c of cards){
     if(c.game!=='pokemon')continue;
-    const url=libraryUrlFor(c.lang,c._pokeId);
-    if(url)c.image=url;
+    /* Derive setCode + number depuis _pokeId si pas defini (ex "swsh3.5-10" -> "swsh3.5","10") */
+    if(c._pokeId){
+      const m=c._pokeId.match(/^(.+)-([A-Za-z0-9_]+)$/);
+      if(m){
+        if(!c.setCode)c.setCode=m[1];
+        if(!c.number)c.number=m[2];
+      }
+    }
+    const entry=_libEntryFor(c.lang,c._pokeId);
+    if(!entry||typeof entry!=='object')continue;
+    if(entry.p){
+      c.image=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
+    }
+    if(entry.sn&&!c.set)c.set=entry.sn;
+    if(entry.s&&!c.setCode)c.setCode=entry.s;
+    if(entry.no&&!c.number)c.number=entry.no;
   }
   return cards;
 }
