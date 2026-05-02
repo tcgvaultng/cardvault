@@ -412,6 +412,12 @@ img.err-hide{visibility:hidden}
         <div class="hint mt-10">Si la recherche ne renvoie pas les bons résultats, clique sur "Force update" pour récupérer la dernière version.</div>
       </div>
       <div class="panel">
+        <div class="panel-title">💶 JustTCG (prix Cardmarket multi-jeux)</div>
+        <div class="muted mb-10">Permet de récupérer les prix Cardmarket pour Pokémon FR/JA, One Piece, Yu-Gi-Oh (sources non couvertes par Scryfall/pokemontcg.io).</div>
+        <div class="field"><label>API Key JustTCG</label><input id="cfgJustTcg" type="password" placeholder="..."><div class="hint">Inscription gratuite sur <b>justtcg.com</b> → Account → API Keys (1000 calls/mois free)</div></div>
+        <button class="btn btn-primary btn-block" data-act="saveJustTcgKey">💾 Enregistrer JustTCG</button>
+      </div>
+      <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
         <div class="field">
           <label>API Key Gemini</label>
@@ -462,7 +468,7 @@ const LANGS={
   zht:{label:'🇹🇼 繁體中文',sf:'zht',ygo:'',tcgdex:'zh-tw'}
 };
 
-let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:'',r2Endpoint:'',r2AccessKey:'',r2SecretKey:'',r2Bucket:'cardvault-library',r2PublicUrl:''}};
+let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:'',r2Endpoint:'',r2AccessKey:'',r2SecretKey:'',r2Bucket:'cardvault-library',r2PublicUrl:'',justTcgKey:''}};
 let CAM_STREAM=null;
 let _searchCache=[];
 let _scanCache=[];
@@ -535,6 +541,7 @@ function loadLocal(){
         if(STATE.config.r2SecretKey==null)STATE.config.r2SecretKey='';
         if(STATE.config.r2Bucket==null)STATE.config.r2Bucket='cardvault-library';
         if(STATE.config.r2PublicUrl==null)STATE.config.r2PublicUrl='';
+        if(STATE.config.justTcgKey==null)STATE.config.justTcgKey='';
         delete STATE.config.imagesRepo;
       }
       /* Migration v5 → v6 : chaque profil et chaque carte a un updatedAt */
@@ -731,6 +738,68 @@ function refreshCollectionFromLibrary(){
     try{renderAllCards()}catch(_){}
   }
   return {touched,total:u.cards.length};
+}
+
+/* ==================== PRICES MULTI-SOURCES ==================== */
+function renderPriceBreakdown(p){
+  if(!p||typeof p!=='object')return '';
+  const lines=[];
+  /* Cardmarket */
+  if(p.cm_eur!=null){
+    let line='💶 Cardmarket : <b>'+fmtEur(p.cm_eur)+'</b>';
+    const extras=[];
+    if(p.cm_eur_trend!=null)extras.push('trend '+fmtEur(p.cm_eur_trend));
+    if(p.cm_eur_low!=null)extras.push('low '+fmtEur(p.cm_eur_low));
+    if(p.cm_eur_high!=null)extras.push('high '+fmtEur(p.cm_eur_high));
+    if(extras.length)line+=' <span style="opacity:.7">('+extras.join(' • ')+')</span>';
+    lines.push(line);
+  }
+  if(p.cm_eur_foil!=null)lines.push('💶 Cardmarket Foil : <b>'+fmtEur(p.cm_eur_foil)+'</b>');
+  /* TCGPlayer USD */
+  if(p.tcg_usd!=null){
+    let line='💵 TCGPlayer : <b>$'+p.tcg_usd.toFixed(2)+'</b>';
+    const extras=[];
+    if(p.tcg_usd_low!=null)extras.push('low $'+p.tcg_usd_low.toFixed(2));
+    if(p.tcg_usd_high!=null)extras.push('high $'+p.tcg_usd_high.toFixed(2));
+    if(extras.length)line+=' <span style="opacity:.7">('+extras.join(' • ')+')</span>';
+    lines.push(line);
+  }
+  if(p.tcg_usd_foil!=null)lines.push('💵 TCGPlayer Foil : <b>$'+p.tcg_usd_foil.toFixed(2)+'</b>');
+  /* MTGO */
+  if(p.mtgo_tix!=null)lines.push('🎫 MTGO : <b>'+p.mtgo_tix.toFixed(2)+' tix</b>');
+  /* JustTCG */
+  if(p.justtcg_eur!=null)lines.push('🌐 JustTCG : <b>'+fmtEur(p.justtcg_eur)+'</b>');
+  return lines.join('<br>');
+}
+
+/* ==================== JUSTTCG (Pokemon FR/JA, One Piece, etc.) ==================== */
+async function fetchJustTcgPrice(game,name,setName,number,lang){
+  const key=STATE.config.justTcgKey;
+  if(!key)return null;
+  /* JustTCG mappe les jeux differemment */
+  const gameMap={mtg:'magic',pokemon:'pokemon',onepiece:'one-piece',yugioh:'yugioh'};
+  const g=gameMap[game];
+  if(!g)return null;
+  try{
+    const params=new URLSearchParams({game:g,name:name||'',limit:'5'});
+    if(setName)params.set('set',setName);
+    const r=await fetch('https://api.justtcg.com/v1/cards?'+params.toString(),{
+      headers:{'X-API-Key':key},
+    });
+    if(!r.ok)return null;
+    const j=await r.json();
+    const cards=j.data||j.cards||(Array.isArray(j)?j:[]);
+    if(!cards.length)return null;
+    /* Tente de matcher par numero si fourni */
+    let match=cards[0];
+    if(number){
+      const m=cards.find(c=>String(c.number||c.collector_number||'')===String(number));
+      if(m)match=m;
+    }
+    /* Extrait le prix EUR/USD */
+    const eur=match.price_eur||match.cardmarket_price||match.eur||null;
+    return eur!=null?parseFloat(eur):null;
+  }catch(e){return null}
 }
 
 /* ==================== UPLOAD MANUEL VERS R2 (signature AWS V4) ==================== */
@@ -1565,6 +1634,12 @@ function saveGemini(){
   toast('Clé Gemini enregistrée ✓','ok');
 }
 
+function saveJustTcgKey(){
+  STATE.config.justTcgKey=document.getElementById('cfgJustTcg').value.trim();
+  saveLocal();scheduleSync();
+  toast('Clé JustTCG enregistrée ✓','ok');
+}
+
 function saveR2Config(){
   STATE.config.r2Endpoint=document.getElementById('cfgR2Endpoint').value.trim();
   STATE.config.r2AccessKey=document.getElementById('cfgR2Access').value.trim();
@@ -1741,6 +1816,8 @@ function openCardDetail(cardId){
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   /* Verso si carte double-face : prefere c.imageBack (upload manuel), sinon library */
   const backUrl=c.imageBack||libraryBackUrlFor(c.game,c.lang,_libCardIdFor(c));
+  /* Detail des prix multi-sources */
+  const priceDetail=renderPriceBreakdown(c.prices||{});
   openModal('Détails de la carte',
     '<div class="card-detail">'
     +'<div id="cardImgWrap" data-front="'+esc(c.image||'')+'" data-back="'+esc(backUrl||'')+'" data-side="front">'
@@ -1748,6 +1825,7 @@ function openCardDetail(cardId){
     +'</div>'
     +(backUrl?'<button class="btn btn-ghost btn-block mb-10" data-act="flipCardImage">↻ Retourner la carte</button>':'')
     +'<div class="price-big">'+fmtEur(c.price)+'</div>'
+    +(priceDetail?'<div class="muted" style="font-size:12px;text-align:center;margin-bottom:10px">'+priceDetail+'</div>':'')
     +'<div class="meta-grid">'
     +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
     +'<div class="meta-item"><div class="l">Jeu</div><div class="v">'+esc(g.name)+'</div></div>'
@@ -1836,9 +1914,21 @@ async function refreshAllPrices(){
         if(!c)break;
         try{
           const res=await searchCards(c.game,c.name,c.lang||'en',3,{set:c.set||'',number:c.number||''});
-          if(res.length>0&&res[0].price!=null){
-            const newP=res[0].price;
-            if(c.price!==newP){c.price=newP;c.updatedAt=Date.now();updated++}
+          if(res.length>0){
+            const r0=res[0];
+            if(r0.prices){c.prices=r0.prices}
+            if(r0.price!=null&&c.price!==r0.price){c.price=r0.price;updated++}
+            c.updatedAt=Date.now();
+          }
+          /* Fallback JustTCG si toujours pas de prix (Pokemon FR/JA, One Piece) */
+          if((c.price==null||c.lang!=='en'&&c.game==='pokemon')&&STATE.config.justTcgKey){
+            const jp=await fetchJustTcgPrice(c.game,c.name,c.set,c.number,c.lang);
+            if(jp!=null){
+              c.prices=c.prices||{};
+              c.prices.justtcg_eur=jp;
+              if(c.price==null){c.price=jp;updated++}
+              c.updatedAt=Date.now();
+            }
           }
         }catch(_){fail++}
         done++;
@@ -2040,7 +2130,16 @@ async function searchScryfall(q,lang,limit,opts){
     }
     const j=await r.json();
     (j.data||[]).forEach(c=>{
-      const price=c.prices?.eur?parseFloat(c.prices.eur):(c.prices?.usd?parseFloat(c.prices.usd)*0.92:null);
+      const num=v=>v!=null?parseFloat(v):null;
+      const prices={
+        cm_eur:num(c.prices?.eur),
+        cm_eur_foil:num(c.prices?.eur_foil),
+        tcg_usd:num(c.prices?.usd),
+        tcg_usd_foil:num(c.prices?.usd_foil),
+        tcg_usd_etched:num(c.prices?.usd_etched),
+        mtgo_tix:num(c.prices?.tix),
+      };
+      const primary=prices.cm_eur??(prices.tcg_usd!=null?prices.tcg_usd*0.92:null);
       all.push({
         id:uid(),game:'mtg',
         name:c.name,
@@ -2049,7 +2148,8 @@ async function searchScryfall(q,lang,limit,opts){
         setCode:c.set,
         number:c.collector_number,
         image:c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'',
-        price:price!=null?Math.round(price*100)/100:null,
+        price:primary!=null?Math.round(primary*100)/100:null,
+        prices,
         lang:c.lang||lang,
         _mtgId:c.set+'-'+c.collector_number
       });
@@ -2140,9 +2240,22 @@ async function searchPokemon(q,lang,limit,opts){
     const out=(j.data||[]).map(c=>{
       const cm=c.cardmarket?.prices;
       const tp=c.tcgplayer?.prices;
-      const tpMarket=tp?Object.values(tp)[0]?.market:null;
-      const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
+      const tpFirst=tp?Object.values(tp)[0]:null;
+      const prices={
+        cm_eur:cm?.averageSellPrice||null,
+        cm_eur_trend:cm?.trendPrice||null,
+        cm_eur_low:cm?.lowPrice||null,
+        cm_eur_high:cm?.highPrice||null,
+        cm_eur_holo_avg:cm?.reverseHoloAvg||null,
+        cm_eur_holo_trend:cm?.reverseHoloTrend||null,
+        cm_eur_suggest:cm?.suggestedPrice||null,
+        tcg_usd:tpFirst?.market||null,
+        tcg_usd_low:tpFirst?.low||null,
+        tcg_usd_mid:tpFirst?.mid||null,
+        tcg_usd_high:tpFirst?.high||null,
+      };
+      const price=prices.cm_eur||prices.cm_eur_trend||(prices.tcg_usd?prices.tcg_usd*0.92:null);
+      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,prices,lang:'en',_pokeId:c.id};
     });
     return mergeWithLibrary(out,'pokemon',q,lang,opts,limit);
   }
@@ -3048,6 +3161,7 @@ function renderConfig(){
   const r2s=document.getElementById('cfgR2Secret');if(r2s)r2s.value=STATE.config.r2SecretKey||'';
   const r2b=document.getElementById('cfgR2Bucket');if(r2b)r2b.value=STATE.config.r2Bucket||'cardvault-library';
   const r2p=document.getElementById('cfgR2PublicUrl');if(r2p)r2p.value=STATE.config.r2PublicUrl||'';
+  const jt=document.getElementById('cfgJustTcg');if(jt)jt.value=STATE.config.justTcgKey||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
 }
 
@@ -3083,7 +3197,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
+  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,saveJustTcgKey,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
   switchView
 });
