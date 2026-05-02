@@ -3010,7 +3010,7 @@ async function captureCardOffline(){
       return;
     }
     await loadLibraryManifest();
-    const lang=document.getElementById('searchLang')?.value||'fr';
+    const lang=(scanLang&&scanLang!=='auto')?scanLang:(document.getElementById('searchLang')?.value||'fr');
     const cards=[];
     for(const m of matches){
       const resolved=_resolveCardFromPhashKey(m.key,lang)||{game:m.key.split('|',1)[0],cardId:m.key.split('|',3)[2],entry:null};
@@ -3130,11 +3130,12 @@ async function captureCard(){
   try{
     const info=await geminiIdentify(base64);
     if(!info||!info.name){box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Carte non identifiée</h3><p class="muted">Réessayez avec un meilleur cadrage.</p></div>';return}
-    const game=mapGame(info.game);
-    const lang=document.getElementById('searchLang')?.value||'en';
+    const game=info.game?mapGame(info.game):(document.getElementById('scanGame')?.value!=='auto'?document.getElementById('scanGame').value:'mtg');
+    const scanLangVal=document.getElementById('scanLang')?.value;
+    const lang=(scanLangVal&&scanLangVal!=='auto')?scanLangVal:(document.getElementById('searchLang')?.value||'en');
     const results=await searchCards(game,info.name,lang,5);
     _scanCache=results.slice();
-    const manual={id:uid(),name:info.name,game,set:info.set||'',image:'',price:null,_noPrice:true};
+    const manual={id:uid(),name:info.name,game,set:info.set||'',image:'',price:null,_noPrice:true,lang};
     _scanCache.push(manual);
     const manualIdx=_scanCache.length-1;
     let inner='';
@@ -3143,10 +3144,12 @@ async function captureCard(){
     } else {
       inner=results.map((c,i)=>{
         const g=GAMES[c.game]||{};
+        const displayName=c.printedName||c.name;
+        const langChip=c.lang&&c.lang!=='en'?' <span style="font-size:10px;opacity:.7">['+c.lang.toUpperCase()+']</span>':'';
         return '<div class="card-row" data-act="pickScanResult" data-args="'+esc(JSON.stringify([i]))+'">'
           +imgTag(c.image)
-          +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
-          +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(c.set||g.name)+'</div></div>'
+          +'<div class="info"><div class="nm">'+esc(displayName)+langChip+'</div>'
+          +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(c.set||g.name)+(c.number?' • #'+esc(c.number):'')+'</div></div>'
           +'<div class="price">'+fmtEur(c.price)+'</div></div>';
       }).join('')
       +'<div class="muted text-center mt-10"><a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Aucun ne correspond ? Ajouter manuellement</a></div>';
