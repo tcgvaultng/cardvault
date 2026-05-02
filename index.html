@@ -97,12 +97,52 @@ main{padding:16px 16px 110px}
 .coll-card .cc-thumbs img{width:30px;height:42px;object-fit:cover;border-radius:4px;margin-left:-10px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.5)}
 .coll-card .cc-thumbs img:first-child{margin-left:0}
 
-.card-row{display:flex;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;align-items:center;cursor:pointer}
+.card-row{display:flex;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;align-items:center;cursor:pointer;position:relative}
 .card-row img{width:46px;height:64px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--panel)}
 .card-row .info{flex:1;min-width:0}
 .card-row .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-row .sub{font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-row .price{font-weight:700;color:var(--gold-2);font-family:'Cinzel',serif;font-size:14px;white-space:nowrap}
+
+/* === Vue Cartes : toolbar + galerie + bulk === */
+.cards-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.cards-toolbar{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+.cards-toolbar>input{flex:1 1 220px;min-width:180px}
+.cards-toolbar>select{flex:0 1 200px;min-width:160px;cursor:pointer}
+.cards-view-toggle{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px;flex-shrink:0}
+.cards-view-toggle button{padding:6px 12px;color:var(--text-dim);border-radius:6px;min-height:36px;cursor:pointer}
+.cards-view-toggle button.active{background:rgba(201,160,75,.2);color:var(--gold)}
+#bulkToggleBtn.active{background:rgba(160,102,255,.2);color:var(--violet-2);border-color:rgba(160,102,255,.4)}
+
+/* Vue galerie style Scryfall */
+.cards-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+@media (min-width:720px){.cards-gallery{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}}
+@media (min-width:1100px){.cards-gallery{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}}
+.gallery-card{position:relative;cursor:pointer;border-radius:12px;overflow:hidden;transition:transform .12s,box-shadow .12s}
+.gallery-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.gallery-card .img-wrap{position:relative;aspect-ratio:5/7;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+.gallery-card img{width:100%;height:100%;object-fit:cover;display:block}
+.gallery-card .gc-name{padding:8px 4px 0;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gallery-card .gc-sub{padding:0 4px;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gallery-card .qty-badge{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.85);color:#fff;font-weight:700;padding:3px 8px;border-radius:6px;font-size:12px;z-index:2}
+.gallery-card .price-badge{position:absolute;top:8px;right:8px;background:linear-gradient(135deg,rgba(201,160,75,.95),rgba(160,102,255,.85));color:#fff;font-weight:700;padding:4px 8px;border-radius:6px;font-size:11px;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.gallery-card .foil-badge{position:absolute;bottom:8px;left:8px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-weight:700;padding:3px 7px;border-radius:5px;font-size:10px;z-index:2}
+.gallery-card .game-dot{position:absolute;bottom:8px;right:8px;width:14px;height:14px;border-radius:50%;border:2px solid rgba(0,0,0,.6);z-index:2}
+.gallery-card.selected .img-wrap{border-color:var(--violet-2);border-width:3px;box-shadow:0 0 0 2px rgba(160,102,255,.4)}
+.gallery-card.selected::after{content:"✓";position:absolute;top:8px;left:50%;transform:translateX(-50%);background:var(--violet-2);color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;z-index:3;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.gallery-card .img-wrap .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-size:32px}
+
+/* Bulk mode : checkbox visible sur card-row, sélection visuelle */
+.card-row.selected{border-color:var(--violet-2);background:rgba(160,102,255,.08)}
+.bulk-mode .card-row::before{content:"";position:absolute;left:10px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:2px solid var(--border);border-radius:6px;background:var(--panel);transition:all .15s}
+.bulk-mode .card-row.selected::before{background:var(--violet-2);border-color:var(--violet-2);content:"✓";color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+.bulk-mode .card-row{padding-left:42px}
+
+/* Bulk actions bar (sticky en bas) */
+.bulk-actions{position:fixed;bottom:calc(56px + env(safe-area-inset-bottom));left:0;right:0;background:rgba(11,6,24,.95);backdrop-filter:blur(14px);border-top:1px solid var(--violet);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:25;box-shadow:0 -4px 16px rgba(0,0,0,.5)}
+.bulk-actions.hidden{display:none}
+.bulk-actions #bulkCount{font-weight:700;color:var(--violet-2);margin-right:auto;font-size:13px}
+@media (min-width:720px){.bulk-actions{justify-content:center}}
 
 .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(255,255,255,.08);border:1px solid transparent}
 .chip-gold{background:rgba(201,160,75,.18);color:var(--gold-2);border-color:rgba(201,160,75,.35)}
@@ -260,9 +300,16 @@ img.err-hide{visibility:hidden}
   .tabbar{max-width:1280px;margin:0 auto;padding:10px 0 calc(10px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.4);justify-content:center;gap:24px}
   .tabbar button{min-width:110px;padding:8px 18px;font-size:13px}
   .tabbar button .ic{font-size:24px}
+  /* Sur desktop : grille 320-360px → 3-4 colonnes minimum sur 1280px container */
+  #collectionsGrid.coll-grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+  #collectionsGrid .coll-card{min-height:200px;padding:20px}
+  #collectionsGrid .coll-card .cc-name{font-size:20px}
+  #collectionsGrid .coll-card .cc-thumbs{height:60px;margin-top:12px}
+  #collectionsGrid .coll-card .cc-thumbs img{width:42px;height:60px;border-radius:6px;margin-left:-14px}
+  #collectionsGrid .coll-card .cc-meta{font-size:13px}
+  #collectionsGrid .coll-card .cc-value{font-size:16px}
+  /* Browse subgrids et card-grids gardent leur tailles */
   .coll-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
-  .coll-card{min-height:180px;padding:18px}
-  .coll-card .cc-name{font-size:18px}
   .meta-grid{grid-template-columns:repeat(4,1fr)}
   .avatar-grid{grid-template-columns:repeat(10,1fr)}
   .modal-backdrop{align-items:center}
@@ -443,12 +490,38 @@ img.err-hide{visibility:hidden}
     </section>
 
     <section id="view-cards" class="view">
-      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Toutes mes cartes</h2>
-      <div class="field">
-        <input id="filterCards" placeholder="Filtrer par nom...">
+      <div class="cards-header">
+        <h2 style="font-size:20px;color:var(--gold-2)">Toutes mes cartes</h2>
+        <span id="cardsStats" class="muted" style="font-size:13px"></span>
+      </div>
+      <div class="cards-toolbar">
+        <input id="filterCards" placeholder="🔍 Filtrer par nom...">
+        <select id="cardsSort" title="Trier">
+          <option value="name">↕ Nom A-Z</option>
+          <option value="name-desc">↕ Nom Z-A</option>
+          <option value="price-desc">💰 Prix ↓ (haut → bas)</option>
+          <option value="price-asc">💰 Prix ↑ (bas → haut)</option>
+          <option value="date-desc">📅 Plus récent</option>
+          <option value="date-asc">📅 Plus ancien</option>
+          <option value="game">🎮 Jeu</option>
+          <option value="set">📁 Extension</option>
+        </select>
+        <div class="cards-view-toggle">
+          <button id="viewListBtn" class="active" title="Vue liste"><span style="font-size:16px">☰</span></button>
+          <button id="viewGalleryBtn" title="Vue galerie"><span style="font-size:16px">▦</span></button>
+        </div>
+        <button id="bulkToggleBtn" class="btn btn-ghost btn-sm" title="Sélection multiple">☑ Sélection</button>
       </div>
       <div class="segmented" id="filterGameSeg"></div>
       <div id="allCardsList"></div>
+      <div id="bulkActions" class="bulk-actions hidden">
+        <span id="bulkCount">0 sélectionnée(s)</span>
+        <button class="btn btn-ghost btn-sm" data-act="bulkSelectAll">Tout</button>
+        <button class="btn btn-ghost btn-sm" data-act="bulkSelectNone">Rien</button>
+        <button class="btn btn-violet btn-sm" data-act="bulkMove">📁 Déplacer</button>
+        <button class="btn btn-ghost btn-sm" data-act="bulkExport">📥 CSV</button>
+        <button class="btn btn-danger btn-sm" data-act="bulkDelete">🗑️ Supprimer</button>
+      </div>
     </section>
 
     <section id="view-compare" class="view">
@@ -1212,7 +1285,7 @@ function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.active
 const PLACEHOLDER_IMG='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1a3e"/><stop offset="1" stop-color="#1a0a2e"/></linearGradient></defs><rect width="100" height="140" rx="8" fill="url(#g)"/><text x="50" y="76" text-anchor="middle" font-size="36" fill="#c9a04b">🂠</text><text x="50" y="108" text-anchor="middle" font-size="10" font-family="serif" fill="#b8a9d4">no image</text></svg>');
 function imgTag(src,extraAttrs){
   const extra=extraAttrs?(' '+extraAttrs):'';
-  return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" data-zoom="1"'+extra+'>';
+  return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" loading="lazy" decoding="async" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" data-zoom="1"'+extra+'>';
 }
 
 /* ==================== LIGHTBOX (zoom carte) ==================== */
@@ -1901,10 +1974,13 @@ function exportCsv(cid){
   toast('CSV téléchargé ✓','ok');
 }
 
-function renderCardRow(c){
+function renderCardRow(c,opts){
+  opts=opts||{};
+  const action=opts.action||'openCardDetail';
+  const sel=opts.selectable&&_cardsSelection.has(c.id)?' selected':'';
   const g=GAMES[c.game]||{name:c.game,color:'#888'};
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
-  return '<div class="card-row" data-act="openCardDetail" data-args="'+esc(JSON.stringify([c.id]))+'">'
+  return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
     +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+((c.quantity||1)>1?' • x'+c.quantity:'')+'</div></div>'
@@ -2175,6 +2251,43 @@ function deleteCard(id){
 }
 
 /* ==================== ALL CARDS ==================== */
+/* État vue Cartes : préférences persistées dans localStorage */
+let _cardsView=localStorage.getItem('cardvault_cardsView')||'list'; /* 'list' | 'gallery' */
+let _cardsSort=localStorage.getItem('cardvault_cardsSort')||'name';
+let _cardsBulkMode=false;
+const _cardsSelection=new Set();
+
+function _sortCards(cards,sort){
+  const cmp={
+    name:(a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}),
+    'name-desc':(a,b)=>b.name.localeCompare(a.name,'fr',{sensitivity:'base'}),
+    'price-desc':(a,b)=>(b.price||0)-(a.price||0),
+    'price-asc':(a,b)=>(a.price==null?Infinity:a.price)-(b.price==null?Infinity:b.price),
+    'date-desc':(a,b)=>(b.addedAt||0)-(a.addedAt||0),
+    'date-asc':(a,b)=>(a.addedAt||0)-(b.addedAt||0),
+    game:(a,b)=>(a.game||'').localeCompare(b.game||'')||a.name.localeCompare(b.name),
+    set:(a,b)=>(a.set||a.setCode||'').localeCompare(b.set||b.setCode||'')||a.name.localeCompare(b.name),
+  }[sort]||cmp.name;
+  return cards.sort(cmp);
+}
+
+function renderGalleryCard(c){
+  const g=GAMES[c.game]||{name:c.game,color:'#888'};
+  const sel=_cardsSelection.has(c.id)?' selected':'';
+  const img=c.image
+    ? '<img src="'+esc(c.image)+'" loading="lazy" alt="'+esc(c.name)+'" onerror="this.classList.add(\'err-hide\')">'
+    : '<div class="placeholder">🃏</div>';
+  const qty=(c.quantity||1)>1?'<span class="qty-badge">×'+(c.quantity||1)+'</span>':'';
+  const price=c.price!=null?'<span class="price-badge">'+fmtEur(c.price)+'</span>':'';
+  const foil=c.foil?'<span class="foil-badge">✨ FOIL</span>':'';
+  const dot='<span class="game-dot" style="background:'+g.color+'" title="'+esc(g.name)+'"></span>';
+  return '<div class="gallery-card'+sel+'" data-act="cardClick" data-args="'+esc(JSON.stringify([c.id]))+'">'
+    +'<div class="img-wrap">'+img+qty+price+foil+dot+'</div>'
+    +'<div class="gc-name">'+esc(c.name)+'</div>'
+    +'<div class="gc-sub">'+esc(c.set||g.name)+(c.number?' • #'+esc(c.number):'')+'</div>'
+    +'</div>';
+}
+
 function renderAllCards(){
   const u=getUser();if(!u)return;
   const seg=document.getElementById('filterGameSeg');
@@ -2186,15 +2299,127 @@ function renderAllCards(){
       b.classList.add('active');_gameFilter=b.dataset.g;renderAllCards();
     });
   }
+  /* Sync UI state → DOM controls */
+  const sortSel=document.getElementById('cardsSort');if(sortSel&&sortSel.value!==_cardsSort)sortSel.value=_cardsSort;
+  const lbtn=document.getElementById('viewListBtn'),gbtn=document.getElementById('viewGalleryBtn');
+  if(lbtn&&gbtn){lbtn.classList.toggle('active',_cardsView==='list');gbtn.classList.toggle('active',_cardsView==='gallery')}
+  const bulkBtn=document.getElementById('bulkToggleBtn');if(bulkBtn)bulkBtn.classList.toggle('active',_cardsBulkMode);
+  const view=document.getElementById('view-cards');if(view)view.classList.toggle('bulk-mode',_cardsBulkMode);
+  /* Filtre + tri */
   const f=(document.getElementById('filterCards')?.value||'').toLowerCase();
   let cards=[...(u.cards||[])];
   if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
-  if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f));
-  cards.sort((a,b)=>a.name.localeCompare(b.name));
+  if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f)||(c.set||'').toLowerCase().includes(f)||(c.setCode||'').toLowerCase().includes(f));
+  _sortCards(cards,_cardsSort);
+  /* Stats */
+  const stats=document.getElementById('cardsStats');
+  if(stats){
+    const totalQty=cards.reduce((s,c)=>s+(c.quantity||1),0);
+    const totalEur=cards.reduce((s,c)=>s+((c.price||0)*(c.quantity||1)),0);
+    stats.textContent=cards.length+' cartes • '+totalQty+' uniques • '+fmtEur(totalEur);
+  }
   const list=document.getElementById('allCardsList');
-  list.innerHTML=cards.length===0
-    ? '<div class="empty"><div class="ic">🔍</div><h3>Aucune carte</h3></div>'
-    : cards.map(c=>renderCardRow(c)).join('');
+  if(cards.length===0){
+    list.className='';
+    list.innerHTML='<div class="empty"><div class="ic">🔍</div><h3>Aucune carte</h3></div>';
+  } else if(_cardsView==='gallery'){
+    list.className='cards-gallery';
+    list.innerHTML=cards.map(c=>renderGalleryCard(c)).join('');
+  } else {
+    list.className='';
+    list.innerHTML=cards.map(c=>renderCardRow(c,{action:'cardClick',selectable:_cardsBulkMode})).join('');
+  }
+  _updateBulkBar();
+}
+
+function _updateBulkBar(){
+  const bar=document.getElementById('bulkActions');
+  if(!bar)return;
+  if(_cardsBulkMode&&_cardsSelection.size>0){
+    bar.classList.remove('hidden');
+    document.getElementById('bulkCount').textContent=_cardsSelection.size+' sélectionnée(s)';
+  } else bar.classList.add('hidden');
+}
+
+function setCardsView(v){_cardsView=v;localStorage.setItem('cardvault_cardsView',v);renderAllCards()}
+function setCardsSort(s){_cardsSort=s;localStorage.setItem('cardvault_cardsSort',s);renderAllCards()}
+function toggleBulkMode(){_cardsBulkMode=!_cardsBulkMode;if(!_cardsBulkMode)_cardsSelection.clear();renderAllCards()}
+
+/* Click sur une carte : routé selon le mode (bulk → toggle, normal → ouvre détail) */
+function cardClick(id){
+  if(_cardsBulkMode){
+    if(_cardsSelection.has(id))_cardsSelection.delete(id);
+    else _cardsSelection.add(id);
+    renderAllCards();
+  } else {
+    openCardDetail(id);
+  }
+}
+
+function bulkSelectAll(){
+  const u=getUser();const f=(document.getElementById('filterCards')?.value||'').toLowerCase();
+  let cards=[...(u.cards||[])];
+  if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
+  if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f));
+  cards.forEach(c=>_cardsSelection.add(c.id));
+  renderAllCards();
+}
+function bulkSelectNone(){_cardsSelection.clear();renderAllCards()}
+
+function bulkDelete(){
+  if(_cardsSelection.size===0)return;
+  if(!confirm('Supprimer définitivement '+_cardsSelection.size+' carte(s) ? Cette action est synchro entre tous tes appareils.'))return;
+  const u=getUser();u.deletedCards=u.deletedCards||{};
+  const ids=[..._cardsSelection];
+  for(const id of ids){
+    const c=(u.cards||[]).find(x=>x.id===id);
+    if(c){u.deletedCards[id]=Date.now();if(typeof cardKey==='function')u.deletedCards[cardKey(c)]=Date.now()}
+  }
+  u.cards=(u.cards||[]).filter(c=>!_cardsSelection.has(c.id));
+  _cardsSelection.clear();
+  touchActiveUser();saveLocal();scheduleSync();renderCollections();renderAllCards();
+  toast(ids.length+' carte(s) supprimée(s) ✓','ok');
+}
+
+function bulkMove(){
+  if(_cardsSelection.size===0)return;
+  const u=getUser();
+  if(!u.collections||u.collections.length===0){toast('Aucune collection','err');return}
+  const opts=u.collections.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+  openModal('Déplacer '+_cardsSelection.size+' carte(s)',
+    '<div class="field"><label>Vers la collection</label><select id="bulk_target">'+opts+'</select></div>'
+    +'<button class="btn btn-primary btn-block" id="bulk_move_ok">📁 Déplacer</button>',
+    ()=>{
+      document.getElementById('bulk_move_ok').addEventListener('click',()=>{
+        const cid=document.getElementById('bulk_target').value;
+        let n=0;
+        for(const id of _cardsSelection){
+          const c=u.cards.find(x=>x.id===id);
+          if(c&&c.collectionId!==cid){c.collectionId=cid;touchCard(c);n++}
+        }
+        _cardsSelection.clear();
+        saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+        toast(n+' carte(s) déplacée(s) ✓','ok');
+      });
+    });
+}
+
+function bulkExport(){
+  if(_cardsSelection.size===0)return;
+  const u=getUser();
+  const cards=(u.cards||[]).filter(c=>_cardsSelection.has(c.id));
+  /* CSV header + rows */
+  const esc=v=>{const s=String(v==null?'':v);return /["\n,]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+  const rows=[['name','game','set','setCode','number','lang','foil','quantity','price','collectionId']];
+  for(const c of cards)rows.push([c.name,c.game,c.set,c.setCode,c.number,c.lang,c.foil?'1':'',c.quantity||1,c.price==null?'':c.price,c.collectionId]);
+  const csv=rows.map(r=>r.map(esc).join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='cardvault-export-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast(cards.length+' carte(s) exportée(s) ✓','ok');
 }
 
 /* ==================== PRICE APIs ==================== */
@@ -4182,7 +4407,8 @@ registerActions({
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,saveR2Config,saveJustTcgKey,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
-  switchView
+  switchView,
+  cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport
 });
 
 /* ==================== WIRING ==================== */
@@ -4195,7 +4421,16 @@ document.getElementById('btnCapture').addEventListener('click',captureCardOfflin
 document.getElementById('btnCaptureAI').addEventListener('click',captureCard);
 document.getElementById('scanGame').addEventListener('change',_refreshScanSets);
 document.getElementById('scanLang').addEventListener('change',_refreshScanSets);
-document.getElementById('filterCards').addEventListener('input',renderAllCards);
+/* Filtre carte avec debounce 200ms (perf) */
+let _filterCardsDebounce=null;
+document.getElementById('filterCards').addEventListener('input',()=>{
+  clearTimeout(_filterCardsDebounce);
+  _filterCardsDebounce=setTimeout(renderAllCards,200);
+});
+document.getElementById('cardsSort').addEventListener('change',e=>setCardsSort(e.target.value));
+document.getElementById('viewListBtn').addEventListener('click',()=>setCardsView('list'));
+document.getElementById('viewGalleryBtn').addEventListener('click',()=>setCardsView('gallery'));
+document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode);
 ['searchName','searchSet','searchNumber'].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
