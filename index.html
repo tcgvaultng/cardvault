@@ -539,11 +539,18 @@ async function loadLibraryManifest(){
   return _libManifestPromise;
 }
 
+function _libEntryPath(entry){
+  if(!entry)return null;
+  if(typeof entry==='string')return entry;  // v1 fallback
+  return entry.p||null;
+}
+
 function libraryUrlFor(lang,cardId){
   if(!_libManifest||!cardId)return null;
   const l=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
   const key=l+'|'+String(cardId).toLowerCase();
-  const path=_libManifest.cards&&_libManifest.cards[key];
+  const entry=_libManifest.cards&&_libManifest.cards[key];
+  const path=_libEntryPath(entry);
   if(!path)return null;
   return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
 }
@@ -557,6 +564,53 @@ function applyLibraryToResults(cards){
     if(url)c.image=url;
   }
   return cards;
+}
+
+/* Recherche dans la library (manifest enrichi) par nom + filtres set/numero/lang */
+function searchLibrary(q,lang,opts){
+  if(!_libManifest||!_libManifest.cards)return [];
+  opts=opts||{};
+  const targetLang=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
+  const qNorm=(q||'').toLowerCase().trim();
+  const setNorm=(opts.set||'').toLowerCase().trim();
+  const numNorm=String(opts.number||'').replace(/^0+/,'').toLowerCase().trim();
+  const out=[];
+  for(const [key,entry] of Object.entries(_libManifest.cards)){
+    const [l,cardId]=key.split('|',2);
+    if(l!==targetLang)continue;
+    if(typeof entry!=='object')continue;
+    /* Filtres */
+    if(qNorm){
+      const n=(entry.n||'').toLowerCase();
+      if(!n.includes(qNorm))continue;
+    }
+    if(setNorm){
+      const s=(entry.s||'').toLowerCase();
+      const sn=(entry.sn||'').toLowerCase();
+      if(s!==setNorm && !sn.includes(setNorm))continue;
+    }
+    if(numNorm){
+      const no=String(entry.no||'').replace(/^0+/,'').toLowerCase();
+      if(no!==numNorm)continue;
+    }
+    /* Construit l'objet de carte */
+    const path=entry.p;
+    const url=_libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
+    out.push({
+      id:uid(),game:'pokemon',
+      name:entry.n||cardId,
+      printedName:entry.n||cardId,
+      set:entry.sn||entry.s||'',
+      setCode:entry.s||'',
+      number:entry.no||'',
+      image:url,
+      price:null,
+      lang:targetLang==='ja'?'ja':targetLang,
+      _pokeId:cardId,
+      _libraryHit:true,
+    });
+  }
+  return out;
 }
 function uid(){return Math.random().toString(36).slice(2,11)+Date.now().toString(36)}
 function fmtEur(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})}
@@ -1473,6 +1527,30 @@ async function searchPokemon(q,lang,limit,opts){
   opts=opts||{};
   /* Charge le manifest library en parallele (lazy, cache 24h) */
   const libPromise=loadLibraryManifest();
+
+  /* Library d'abord : si elle a des resultats, on commence par la */
+  await libPromise;
+  const libResults=searchLibrary(q,lang,opts).slice(0,limit||60);
+  /* Si la library a beaucoup de resultats, retourne sans appeler l'API
+     (ca evite des appels inutiles. Les prix seront fetched a l'ajout) */
+  if(libResults.length>0 && (q||'').length>=3){
+    /* Fetch les prix en parallele via pokemontcg.io pour les cartes EN */
+    if(lang==='en'){
+      await Promise.all(libResults.map(async card=>{
+        try{
+          const data=await pokeFetchFallback(card._pokeId,card.number);
+          if(data){
+            const cm=data.cardmarket?.prices;
+            const tp=data.tcgplayer?.prices;
+            const tpMarket=tp?Object.values(tp)[0]?.market:null;
+            const p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
+            if(p!=null)card.price=Math.round(p*100)/100;
+          }
+        }catch(_){}
+      }));
+    }
+    return libResults;
+  }
   // EN → pokemontcg.io (avec prix, syntaxe Lucene)
   if(lang==='en'){
     const qParts=[];
