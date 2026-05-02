@@ -2482,11 +2482,28 @@ function chooseCollectionAndAdd(card){
             existing.quantity=(existing.quantity||1)+qty;
             if(price!=null)existing.price=price;
             if(draft.image&&!existing.image)existing.image=draft.image;
+            /* Enrichit les champs metadata si manquants */
+            if(draft.setCode&&!existing.setCode)existing.setCode=draft.setCode;
+            if(draft.number&&!existing.number)existing.number=draft.number;
+            if(draft._pokeId&&!existing._pokeId)existing._pokeId=draft._pokeId;
+            if(draft._mtgId&&!existing._mtgId)existing._mtgId=draft._mtgId;
+            if(draft._opId&&!existing._opId)existing._opId=draft._opId;
+            if(draft._ygoId&&!existing._ygoId)existing._ygoId=draft._ygoId;
+            if(draft.imageBack&&!existing.imageBack)existing.imageBack=draft.imageBack;
             touchCard(existing);
             toast('Quantité mise à jour ✓','ok');
           } else {
             const now=Date.now();
-            u.cards.push({id:uid(),collectionId:cid,name:draft.name,printedName:draft.printedName||'',game:draft.game,set:draft.set||'',image:draft.image||'',price,quantity:qty,lang:chosenLang,addedAt:now,updatedAt:now});
+            const newCard={id:uid(),collectionId:cid,
+              name:draft.name,printedName:draft.printedName||'',
+              game:draft.game,set:draft.set||'',setCode:draft.setCode||'',number:draft.number||'',
+              image:draft.image||'',imageBack:draft.imageBack||undefined,
+              price,quantity:qty,lang:chosenLang,addedAt:now,updatedAt:now};
+            if(draft._pokeId)newCard._pokeId=draft._pokeId;
+            if(draft._mtgId)newCard._mtgId=draft._mtgId;
+            if(draft._opId)newCard._opId=draft._opId;
+            if(draft._ygoId)newCard._ygoId=draft._ygoId;
+            u.cards.push(newCard);
             touchActiveUser();
             toast('Carte ajoutée ✓','ok');
           }
