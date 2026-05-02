@@ -312,19 +312,18 @@ img.err-hide{visibility:hidden}
 
 /* ==================== DESKTOP / PC (≥1100px) ==================== */
 @media (min-width:1100px){
-  /* === SIDEBAR : tabbar transformée en barre verticale gauche, 60px → 200px hover === */
-  body{--sidebar-w:64px}
+  /* === SIDEBAR : tabbar transformée en barre verticale gauche, toujours ouverte === */
+  body{--sidebar-w:220px}
   .tabbar{
     position:fixed;top:0;left:0;bottom:0;right:auto;
     width:var(--sidebar-w);max-width:none;margin:0;
     flex-direction:column;justify-content:flex-start;align-items:stretch;
-    gap:2px;padding:64px 6px 16px;
+    gap:2px;padding:64px 10px 16px;
     border-top:none;border-right:1px solid var(--border);
     box-shadow:4px 0 20px rgba(0,0,0,.4);
-    overflow:hidden;transition:width .2s ease;
+    overflow-y:auto;overflow-x:hidden;
     z-index:30;
   }
-  .tabbar:hover,.tabbar:focus-within{width:220px}
   .tabbar button{
     display:flex;flex-direction:row;align-items:center;justify-content:flex-start;
     gap:14px;padding:10px 12px;margin:1px 0;
@@ -333,13 +332,12 @@ img.err-hide{visibility:hidden}
     font-size:14px;text-align:left;white-space:nowrap;overflow:hidden;
   }
   .tabbar button .ic{font-size:22px;line-height:1;width:32px;flex-shrink:0;text-align:center}
-  .tabbar button .lbl{opacity:0;transition:opacity .15s ease;flex:1;min-width:0}
-  .tabbar:hover button .lbl,.tabbar:focus-within button .lbl{opacity:1;transition-delay:.05s}
+  .tabbar button .lbl{opacity:1;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
   .tabbar button.active{background:rgba(201,160,75,.14);color:var(--gold);font-weight:600}
   .tabbar button:hover{background:rgba(255,255,255,.04)}
 
   /* App container : layout côte-à-côte (sidebar + reste) */
-  #app{max-width:none;width:100%;padding-left:var(--sidebar-w);transition:padding-left .2s ease}
+  #app{max-width:none;width:100%;padding-left:var(--sidebar-w)}
   .topbar{padding:14px 32px;max-width:1280px;margin:0 auto}
   .topbar h1{font-size:24px}
   main{padding:28px 32px 32px;max-width:1280px;margin:0 auto}
@@ -397,14 +395,12 @@ img.err-hide{visibility:hidden}
     border-top:1px solid var(--border);
   }
   .tabbar .sync-indicator.in-sidebar .sync-dot{flex-shrink:0;width:14px;display:flex;justify-content:center}
-  .tabbar .sync-indicator.in-sidebar .sync-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s;max-width:none;color:var(--text-dim)}
-  .tabbar:hover .sync-indicator.in-sidebar .sync-status,.tabbar:focus-within .sync-indicator.in-sidebar .sync-status{opacity:1;transition-delay:.05s}
+  .tabbar .sync-indicator.in-sidebar .sync-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;max-width:none;color:var(--text-dim)}
 
   /* User-chip : juste après sync, en bas de la sidebar */
   .tabbar .user-chip.in-sidebar:hover{background:rgba(255,255,255,.04);border-color:var(--border)}
   .tabbar .user-chip.in-sidebar .av{width:32px;height:32px;flex-shrink:0;font-size:16px}
-  .tabbar .user-chip.in-sidebar .nm{flex:1;min-width:0;font-size:14px;color:var(--text);font-weight:500;opacity:0;transition:opacity .15s;max-width:none}
-  .tabbar:hover .user-chip.in-sidebar .nm,.tabbar:focus-within .user-chip.in-sidebar .nm{opacity:1;transition-delay:.05s}
+  .tabbar .user-chip.in-sidebar .nm{flex:1;min-width:0;font-size:14px;color:var(--text);font-weight:500;max-width:none;overflow:hidden;text-overflow:ellipsis}
 
   /* === Vue Ajouter en 2 colonnes : Upload+Scanner gauche, Recherche droite === */
   #view-add.active{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
