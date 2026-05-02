@@ -284,6 +284,15 @@ img.err-hide{visibility:hidden}
       </div>
       <div class="panel">
         <div class="panel-title">📷 Scanner caméra</div>
+        <div class="row" style="gap:6px;margin-bottom:8px">
+          <label style="flex:0 0 auto;align-self:center;font-size:13px;color:#aaa">Jeu :</label>
+          <select id="scanGame" style="flex:1">
+            <option value="auto">🎯 Auto (tous)</option>
+            <option value="pokemon">🐉 Pokémon</option>
+            <option value="mtg">🃏 Magic</option>
+            <option value="onepiece">🏴‍☠️ One Piece</option>
+          </select>
+        </div>
         <div class="cam-wrap hidden" id="camWrap">
           <video id="camVideo" autoplay playsinline muted></video>
           <canvas id="camCanvas"></canvas>
@@ -292,9 +301,9 @@ img.err-hide{visibility:hidden}
         <div class="scan-actions">
           <button class="btn btn-primary" id="btnStartCam">🎥 Démarrer caméra</button>
           <button class="btn btn-violet" id="btnCapture" disabled>📸 Offline</button>
-          <button class="btn btn-ghost" id="btnCaptureAI" disabled>✨ IA Gemini</button>
+          <button class="btn btn-ghost" id="btnCaptureAI" disabled>✨ IA</button>
         </div>
-        <div class="hint">📸 <b>Offline</b> = pHash local (instant, gratuit, sans API).&nbsp;&nbsp;✨ <b>IA</b> = Gemini (500/jour, identifie même cartes inconnues).</div>
+        <div class="hint">📸 <b>Offline</b> = pHash local (gratuit, sans API). Sélectionne le jeu pour limiter aux ~52K cartes du jeu.&nbsp;&nbsp;✨ <b>IA</b> = Gemini.</div>
         <div id="scanResult" class="mt-10"></div>
       </div>
 
@@ -2899,17 +2908,53 @@ function _resolveCardFromPhashKey(phashKey,preferredLang){
   return null;
 }
 
+/* Calcule le rectangle (en coords video) qui correspond au cam-overlay (zone pointillée doré).
+   Necessaire car video uses object-fit:cover, donc une partie est crop par le navigateur. */
+function _videoCropFromOverlay(video){
+  const wrap=document.getElementById('camWrap');
+  const overlay=wrap?wrap.querySelector('.cam-overlay'):null;
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if(!wrap||!overlay)return {x:0,y:0,w:vw,h:vh};
+  const wRect=wrap.getBoundingClientRect();
+  const oRect=overlay.getBoundingClientRect();
+  if(wRect.width<=0||wRect.height<=0)return {x:0,y:0,w:vw,h:vh};
+  /* Position overlay relative au wrap (en %) */
+  const ox=(oRect.left-wRect.left)/wRect.width;
+  const oy=(oRect.top-wRect.top)/wRect.height;
+  const ow=oRect.width/wRect.width;
+  const oh=oRect.height/wRect.height;
+  /* Calcul de la zone visible du video dans le wrap (object-fit:cover) */
+  const wrapAR=wRect.width/wRect.height;
+  const videoAR=vw/vh;
+  let visW,visH,visX,visY;
+  if(videoAR>wrapAR){
+    visH=vh;visW=vh*wrapAR;visX=(vw-visW)/2;visY=0;
+  } else {
+    visW=vw;visH=vw/wrapAR;visX=0;visY=(vh-visH)/2;
+  }
+  return {
+    x:Math.round(visX+ox*visW),
+    y:Math.round(visY+oy*visH),
+    w:Math.round(ow*visW),
+    h:Math.round(oh*visH),
+  };
+}
+
 async function captureCardOffline(){
   const video=document.getElementById('camVideo');
   const canvas=document.getElementById('camCanvas');
-  const w=video.videoWidth,h=video.videoHeight;
-  if(!w||!h){toast('Caméra non prête','err');return}
-  /* Crop ratio 3:4 centré (correspond a la zone overlay scan dans l'UI) */
-  let cropW,cropH;
-  if(h*3/4<=w){cropH=h;cropW=h*3/4}else{cropW=w;cropH=w*4/3}
-  const sx=(w-cropW)/2,sy=(h-cropH)/2;
-  canvas.width=Math.round(cropW);canvas.height=Math.round(cropH);
-  canvas.getContext('2d').drawImage(video,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if(!vw||!vh){toast('Caméra non prête','err');return}
+  /* Capture la zone overlay (rectangle pointillé doré) - precise mapping wrap → video */
+  const crop=_videoCropFromOverlay(video);
+  canvas.width=crop.w;canvas.height=crop.h;
+  canvas.getContext('2d').drawImage(video,crop.x,crop.y,crop.w,crop.h,0,0,crop.w,crop.h);
+  /* Construit un dataURL de preview (petit) pour debug visuel */
+  const previewCanvas=document.createElement('canvas');
+  previewCanvas.width=Math.min(140,crop.w);
+  previewCanvas.height=Math.round(previewCanvas.width*crop.h/crop.w);
+  previewCanvas.getContext('2d').drawImage(canvas,0,0,previewCanvas.width,previewCanvas.height);
+  const previewUrl=previewCanvas.toDataURL('image/jpeg',0.7);
   const box=document.getElementById('scanResult');
   try{
     if(!_phashDB){
@@ -2918,15 +2963,15 @@ async function captureCardOffline(){
     }
     box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">Identification offline…</span></div>';
     const queryHex=computePhash(canvas);
+    /* Filtre par jeu si sélectionné */
+    const scanGame=document.getElementById('scanGame')?.value||'auto';
+    const opts={topN:10};
+    if(scanGame!=='auto')opts.games=[scanGame];
     const t0=performance.now();
-    const matches=findNearestPhash(queryHex,{topN:8});
+    const matches=findNearestPhash(queryHex,opts);
     const dt=Math.round(performance.now()-t0);
     if(!matches.length){
-      box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Aucune correspondance</h3><p class="muted">Réessaye avec un meilleur cadrage.</p></div>';
-      return;
-    }
-    if(matches[0].distance>22){
-      box.innerHTML='<div class="empty"><div class="ic">😶</div><h3>Pas de correspondance certaine</h3><p class="muted">Distance min: '+matches[0].distance+'/64. Recadre ou utilise ✨ Gemini.</p></div>';
+      box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Aucune correspondance</h3><p class="muted">DB pas chargée ou jeu vide.</p></div>';
       return;
     }
     await loadLibraryManifest();
@@ -2951,10 +2996,10 @@ async function captureCardOffline(){
       }
       cards.push(c);
     }
-    /* Cherche prix sur la 1ere via API */
+    /* Cherche prix sur la 1ere via API si confiance ok */
     try{
       const top=cards[0];
-      if(top.name&&top.name!=='(inconnue)'){
+      if(top._phashDist<=18&&top.name&&top.name!==top._phashKey.split('|',3)[2]){
         const apiRes=await searchCards(top.game,top.name,lang,5);
         const apiMatch=apiRes.find(r=>r.setCode&&top.setCode&&String(r.setCode).toLowerCase()===String(top.setCode).toLowerCase()&&String(r.number)===String(top.number))||apiRes[0];
         if(apiMatch&&apiMatch.price!=null){
@@ -2968,22 +3013,30 @@ async function captureCardOffline(){
     const manual={id:uid(),name:'Saisie manuelle',game:cards[0].game,set:'',image:'',price:null,_noPrice:true};
     _scanCache.push(manual);
     const manualIdx=_scanCache.length-1;
+    /* Confidence selon distance */
+    const confLabel=d=>d<=4?'<span style="color:#5cd17e">≈99%</span>':d<=8?'<span style="color:#9be07e">≈95%</span>':d<=14?'<span style="color:#e0c87e">≈80%</span>':d<=22?'<span style="color:#e09e7e">≈60%</span>':'<span style="color:#e07e7e">douteux</span>';
     const inner=cards.map((c,i)=>{
       const g=GAMES[c.game]||{};
-      const conf=c._phashDist<=4?'≈99%':c._phashDist<=8?'≈95%':c._phashDist<=14?'≈80%':'≈50%';
       return '<div class="card-row" data-act="pickScanResult" data-args="'+esc(JSON.stringify([i]))+'">'
         +imgTag(c.image)
         +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
-        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • '+conf+' (d='+c._phashDist+')</div></div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • d='+c._phashDist+' '+confLabel(c._phashDist)+'</div></div>'
         +'<div class="price">'+fmtEur(c.price)+'</div></div>';
     }).join('')
     +'<div class="muted text-center mt-10"><a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Aucun ne correspond ? Ajouter manuellement</a></div>';
-    box.innerHTML='<div class="panel" style="margin-bottom:0;background:rgba(120,180,255,.08)">'
-      +'<div class="flex-between mb-10"><div>'
-      +'<div style="font-family:\'Cinzel\',serif;font-size:16px">📸 Match offline</div>'
-      +'<div class="muted">'+matches.length+' candidat(s) sur '+_phashDB.size.toLocaleString()+' cartes en '+dt+' ms</div></div>'
-      +'<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff">pHash</span></div>'
-      +'<div class="search-res mt-10">'+inner+'</div></div>';
+    const bestD=matches[0].distance;
+    const headerColor=bestD<=14?'rgba(120,255,180,.1)':bestD<=22?'rgba(255,200,120,.1)':'rgba(255,120,120,.1)';
+    box.innerHTML='<div class="panel" style="margin-bottom:0;background:'+headerColor+'">'
+      +'<div class="flex-between mb-10">'
+      +'<div style="display:flex;gap:10px;align-items:center">'
+      +'<img src="'+previewUrl+'" style="width:60px;height:auto;border-radius:6px;border:1px solid rgba(255,255,255,.1)" alt="scan">'
+      +'<div>'
+      +'<div style="font-family:\'Cinzel\',serif;font-size:14px">📸 Scan offline</div>'
+      +'<div class="muted" style="font-size:11px">'+matches.length+' match(s)/'+(scanGame==='auto'?_phashDB.size:_phashDB.gameIdx[scanGame].length).toLocaleString()+' • '+dt+' ms • d_min='+bestD+'</div></div>'
+      +'</div>'
+      +'<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff;flex-shrink:0">pHash</span></div>'
+      +(bestD>22?'<div class="hint" style="background:rgba(255,150,150,.1);padding:6px 8px;border-radius:6px;margin-bottom:8px">⚠️ Confiance faible. Recadre la carte dans le rectangle doré, ou essaie ✨ IA.</div>':'')
+      +'<div class="search-res">'+inner+'</div></div>';
   }catch(e){
     console.error(e);
     box.innerHTML='<div class="empty"><div class="ic">⚠️</div><h3>Erreur scan</h3><p class="muted">'+esc(e.message)+'</p></div>';
