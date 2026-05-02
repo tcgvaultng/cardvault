@@ -645,9 +645,16 @@ function refreshCollectionFromLibrary(){
   const u=getUser();
   if(!u||!Array.isArray(u.cards))return {touched:0,total:0};
   let touched=0;
+  /* Helper local pour parser un cardId depuis l'URL d'image */
+  const cardIdFromImg=url=>{
+    if(!url)return '';
+    const m=String(url).match(/\/([^\/]+)\.(?:webp|png|jpg|jpeg)(?:\?|$)/i);
+    return m?decodeURIComponent(m[1]):'';
+  };
   for(const c of u.cards){
     let cardId=_libCardIdFor(c);
     if(!cardId&&c.setCode&&c.number)cardId=c.setCode+'-'+c.number;
+    if(!cardId)cardId=cardIdFromImg(c.image);
     if(!cardId)continue;
     /* Derive setCode/number si manquant */
     if(!c.setCode||!c.number){
@@ -2348,14 +2355,24 @@ function renderBrowse(){
     s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
     if(meta.name&&!s.namedFromManifest)s.name=meta.name;
   }
-  /* Normalise un setCode pour matcher entre APIs (pokemontcg.io vs TCGdex).
-     Ex: "sv03.5" et "sv3pt5" et "sv3.5" -> tous "sv35" */
+  /* Normalise un setCode pour matcher entre APIs (pokemontcg.io vs TCGdex). */
   const normSc=s=>{
     if(!s)return '';
     let r=String(s).toLowerCase().replace(/pt/g,'.').replace(/[\-_]/g,'');
     r=r.replace(/(\d+)/g,n=>parseInt(n,10).toString());
     r=r.replace(/\./g,'');
     return r;
+  };
+  /* Extrait setCode + number d'une URL d'image R2 ou autre.
+     Ex: "https://...r2.dev/fr/sv03.5_151/sv03.5-004.webp" -> {sc:"sv03.5", num:"4"} */
+  const fromImg=url=>{
+    if(!url)return null;
+    const m=String(url).match(/\/([^\/]+)\.(?:webp|png|jpg|jpeg)(?:\?|$)/i);
+    if(!m)return null;
+    const stem=decodeURIComponent(m[1]);
+    const m2=stem.match(/^(.+)-([A-Za-z0-9_]+)$/);
+    if(!m2)return null;
+    return {sc:m2[1].toLowerCase(),num:m2[2].replace(/^0+/,'').toLowerCase()};
   };
   /* Compte les cartes possedees par setCode normalise (cross-langue + cross-API) */
   const u=getUser();
@@ -2371,6 +2388,14 @@ function renderBrowse(){
         if(m){
           if(!sc)sc=m[1].toLowerCase();
           if(!num)num=m[2].replace(/^0+/,'').toLowerCase();
+        }
+      }
+      /* Fallback ultime : parse l'URL de l'image */
+      if((!sc||!num)&&c.image){
+        const f=fromImg(c.image);
+        if(f){
+          if(!sc)sc=f.sc;
+          if(!num)num=f.num;
         }
       }
       if(!sc||!num)continue;
