@@ -96,6 +96,15 @@ main{padding:16px 16px 110px}
 .coll-card .cc-thumbs{display:flex;margin-top:8px;height:42px;z-index:1;position:relative}
 .coll-card .cc-thumbs img{width:30px;height:42px;object-fit:cover;border-radius:4px;margin-left:-10px;border:2px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.5)}
 .coll-card .cc-thumbs img:first-child{margin-left:0}
+/* Drag & drop ordre collections */
+.coll-card{transition:transform .12s,box-shadow .12s,opacity .12s,border-color .12s}
+.coll-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.5);transform:translateY(-2px)}
+.coll-card.dragging{opacity:.4;transform:scale(.96)}
+.coll-card.drag-over{border-color:var(--violet-2);box-shadow:0 0 0 3px rgba(160,102,255,.4)}
+.coll-drag-handle{position:absolute;top:6px;right:6px;font-size:14px;color:var(--text-mute);cursor:grab;padding:4px 6px;border-radius:4px;opacity:0;transition:opacity .15s;z-index:2;line-height:1;letter-spacing:-2px}
+.coll-card:hover .coll-drag-handle{opacity:.7}
+.coll-drag-handle:hover{opacity:1!important;background:rgba(255,255,255,.08)}
+.coll-drag-handle:active{cursor:grabbing}
 
 .card-row{display:flex;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;align-items:center;cursor:pointer;position:relative}
 .card-row img{width:46px;height:64px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--panel)}
@@ -344,11 +353,18 @@ img.err-hide{visibility:hidden}
   .card-row{padding:12px 14px}
   .card-row img{width:60px;height:84px;flex-shrink:0}
   .card-row .nm{font-size:15px}
-  /* Card detail : 2 colonnes (image gauche, form droite) */
-  .card-detail{display:grid;grid-template-columns:380px 1fr;gap:24px;align-items:start}
-  .card-detail #cardImgWrap,.card-detail #addImgWrap{grid-column:1;grid-row:1}
-  .card-detail .price-big,.card-detail .meta-grid,.card-detail .field,.card-detail .row,.card-detail button.btn-block,.card-detail [data-act="flipCardImage"],.card-detail [data-act="flipAddImage"],.card-detail .muted{grid-column:1/-1}
+  /* Card detail : 2 colonnes (image grande gauche 60%, infos+actions droite 40%) */
+  .card-detail{display:grid;grid-template-columns:minmax(300px,60%) 1fr;gap:24px;align-items:start}
+  /* Image + bouton flip restent en col 1 */
+  .card-detail > #cardImgWrap,.card-detail > #addImgWrap{grid-column:1;grid-row:1;align-self:start}
+  .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1;grid-row:2}
+  /* Tout le reste va en col 2, auto-flow */
+  .card-detail > *{grid-column:2}
+  .card-detail > #cardImgWrap,.card-detail > #addImgWrap,
+  .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1}
   .card-detail img{max-width:100%}
+  /* Modal carte : préfère la largeur moderne */
+  .modal:has(.card-detail){max-width:1080px}
   /* Forms longs : limite max-width pour lisibilité */
   .panel form,.panel .field-group{max-width:760px}
   .sync-status{max-width:240px;font-size:12px}
@@ -357,6 +373,13 @@ img.err-hide{visibility:hidden}
 
   /* Bulk actions : aligné avec le contenu (sidebar à gauche, plus de tabbar en bas) */
   .bulk-actions{left:var(--sidebar-w);bottom:0;transition:left .2s ease}
+
+  /* === Vue Ajouter en 2 colonnes : Upload+Scanner gauche, Recherche droite === */
+  #view-add.active{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  #view-add.active > h2{grid-column:1/-1;margin-bottom:0}
+  #view-add.active > .panel:nth-of-type(1){grid-column:1;grid-row:2}
+  #view-add.active > .panel:nth-of-type(2){grid-column:1;grid-row:3}
+  #view-add.active > .panel:nth-of-type(3){grid-column:2;grid-row:2/span 2;position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow-y:auto}
 }
 
 /* ==================== Touch targets — toutes tailles ==================== */
@@ -1882,10 +1905,56 @@ function renderCollections(){
     const val=cards.reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
     const total=cards.reduce((s,x)=>s+(x.quantity||1),0);
     const thumbs=cards.slice(0,4).map(x=>imgTag(x.image)).join('');
-    return '<div class="coll-card" style="--cc:'+c.color+'" data-act="openCollection" data-args="'+esc(JSON.stringify([c.id]))+'">'
+    return '<div class="coll-card" draggable="true" data-cid="'+esc(c.id)+'" style="--cc:'+c.color+'" data-act="openCollection" data-args="'+esc(JSON.stringify([c.id]))+'">'
+      +'<div class="coll-drag-handle" title="Glisser pour réordonner">⋮⋮</div>'
       +'<div><div class="cc-name">'+esc(c.name)+'</div><div class="cc-meta"><span>'+total+' cartes</span><span>'+cards.length+' uniques</span></div></div>'
       +'<div><div class="cc-thumbs">'+thumbs+'</div><div class="cc-value">'+fmtEur(val)+'</div></div></div>';
   }).join('');
+  _wireCollectionDragDrop();
+}
+
+/* === Drag & drop pour réordonner les collections === */
+let _dragCollId=null;
+function _wireCollectionDragDrop(){
+  const grid=document.getElementById('collectionsGrid');
+  if(!grid||grid.dataset.dndWired)return;
+  grid.dataset.dndWired='1';
+  grid.addEventListener('dragstart',e=>{
+    const card=e.target.closest('.coll-card');
+    if(!card)return;
+    _dragCollId=card.dataset.cid;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',_dragCollId);
+  });
+  grid.addEventListener('dragend',e=>{
+    const card=e.target.closest('.coll-card');
+    if(card)card.classList.remove('dragging');
+    grid.querySelectorAll('.coll-card').forEach(c=>c.classList.remove('drag-over'));
+    _dragCollId=null;
+  });
+  grid.addEventListener('dragover',e=>{
+    if(!_dragCollId)return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect='move';
+    const target=e.target.closest('.coll-card');
+    grid.querySelectorAll('.coll-card').forEach(c=>c.classList.remove('drag-over'));
+    if(target&&target.dataset.cid!==_dragCollId)target.classList.add('drag-over');
+  });
+  grid.addEventListener('drop',e=>{
+    if(!_dragCollId)return;
+    e.preventDefault();
+    const target=e.target.closest('.coll-card');
+    if(!target||target.dataset.cid===_dragCollId){_dragCollId=null;return}
+    const u=getUser();if(!u||!u.collections)return;
+    const fromIdx=u.collections.findIndex(c=>c.id===_dragCollId);
+    const toIdx=u.collections.findIndex(c=>c.id===target.dataset.cid);
+    if(fromIdx<0||toIdx<0)return;
+    const [moved]=u.collections.splice(fromIdx,1);
+    u.collections.splice(toIdx,0,moved);
+    _dragCollId=null;
+    touchActiveUser();saveLocal();scheduleSync();renderCollections();
+  });
 }
 
 function openNewCollection(){
@@ -4465,6 +4534,140 @@ document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode
 });
 document.getElementById('searchGame').addEventListener('change',refreshSearchLangs);
 refreshSearchLangs();
+
+/* ==================== HOVER PREVIEW HD (desktop only) ==================== */
+let _hoverPreviewEl=null;
+function _ensureHoverPreview(){
+  if(_hoverPreviewEl)return _hoverPreviewEl;
+  const el=document.createElement('div');
+  el.id='__hoverPreview';
+  el.style.cssText='position:fixed;pointer-events:none;z-index:200;width:340px;aspect-ratio:5/7;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.7);border:2px solid var(--gold);transition:opacity .12s;opacity:0;display:none';
+  el.innerHTML='<img alt="" style="width:100%;height:100%;object-fit:cover;display:block">';
+  document.body.appendChild(el);
+  _hoverPreviewEl=el;
+  return el;
+}
+function _showHoverPreview(src,e){
+  /* Désactivé sur petits écrans / touch */
+  if(window.innerWidth<1024||matchMedia('(pointer:coarse)').matches)return;
+  if(!src)return;
+  const el=_ensureHoverPreview();
+  const img=el.querySelector('img');
+  if(img.src!==src)img.src=src;
+  el.style.display='block';
+  requestAnimationFrame(()=>{el.style.opacity='1'});
+  _moveHoverPreview(e);
+}
+function _moveHoverPreview(e){
+  if(!_hoverPreviewEl||_hoverPreviewEl.style.display==='none')return;
+  const PREV_W=340,PREV_H=Math.round(340*7/5);
+  const margin=20;
+  let x=e.clientX+margin;
+  let y=e.clientY-PREV_H/2;
+  /* Préfère droite, bascule à gauche si pas de place */
+  if(x+PREV_W+margin>window.innerWidth)x=e.clientX-PREV_W-margin;
+  if(y<10)y=10;
+  if(y+PREV_H>window.innerHeight-10)y=window.innerHeight-PREV_H-10;
+  _hoverPreviewEl.style.left=x+'px';
+  _hoverPreviewEl.style.top=y+'px';
+}
+function _hideHoverPreview(){
+  if(!_hoverPreviewEl)return;
+  _hoverPreviewEl.style.opacity='0';
+  setTimeout(()=>{if(_hoverPreviewEl)_hoverPreviewEl.style.display='none'},150);
+}
+/* Délégation : tout .gallery-card et .card-row qui contient une img */
+document.addEventListener('mouseover',e=>{
+  const card=e.target.closest('.gallery-card,#allCardsList .card-row');
+  if(!card)return;
+  const img=card.querySelector('img');
+  if(!img||!img.src||img.classList.contains('err-hide'))return;
+  _showHoverPreview(img.src,e);
+});
+document.addEventListener('mousemove',e=>{
+  if(_hoverPreviewEl&&_hoverPreviewEl.style.display!=='none')_moveHoverPreview(e);
+});
+document.addEventListener('mouseout',e=>{
+  const card=e.target.closest('.gallery-card,#allCardsList .card-row');
+  if(!card)return;
+  /* Si on quitte vers un autre élément hors de la card, hide */
+  if(!card.contains(e.relatedTarget))_hideHoverPreview();
+});
+/* Cleanup au scroll/resize */
+window.addEventListener('scroll',_hideHoverPreview,{passive:true});
+window.addEventListener('resize',_hideHoverPreview);
+
+/* ==================== RACCOURCIS CLAVIER (desktop) ==================== */
+let _kbdGotoBuffer=null;
+let _kbdGotoTimer=null;
+const _gotoMap={c:'collections',a:'add',p:'browse',x:'cards',m:'compare',g:'config'};
+
+function _focusableSearch(){
+  /* Trouve l'input de recherche le plus pertinent selon la vue active */
+  const active=document.querySelector('.view.active')||document.body;
+  return active.querySelector('input[type="text"],input[type="search"],input:not([type]),input[id*="filter"],input[id*="earch"]')||document.querySelector('input:not([type=hidden]):not([disabled])');
+}
+
+function _navCardDetail(direction){
+  /* Navigation prev/next entre cartes dans le modal détail.
+     Récupère la liste filtrée actuelle (vue cards) + ouvre la suivante */
+  const modal=document.getElementById('__modal');
+  if(!modal)return;
+  const btnSave=modal.querySelector('[data-act="saveCardChanges"]');
+  if(!btnSave)return;
+  const args=btnSave.getAttribute('data-args');
+  if(!args)return;
+  let curId;try{curId=JSON.parse(args)[0]}catch(_){return}
+  const u=getUser();if(!u)return;
+  /* Reproduit le filtrage de renderAllCards pour avoir la même liste */
+  const f=(document.getElementById('filterCards')?.value||'').toLowerCase();
+  let cards=[...(u.cards||[])];
+  if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
+  if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f)||(c.set||'').toLowerCase().includes(f)||(c.setCode||'').toLowerCase().includes(f));
+  _sortCards(cards,_cardsSort);
+  const idx=cards.findIndex(c=>c.id===curId);
+  if(idx<0)return;
+  const next=cards[(idx+direction+cards.length)%cards.length];
+  if(next)openCardDetail(next.id);
+}
+
+document.addEventListener('keydown',e=>{
+  /* Ne pas hijacker quand l'utilisateur tape dans un input/textarea/select */
+  const inField=/input|textarea|select/i.test(e.target.tagName)||e.target.isContentEditable;
+  /* Esc ferme la modal toujours */
+  if(e.key==='Escape'){
+    if(document.getElementById('__modal')){closeModal();e.preventDefault()}
+    else if(document.getElementById('__lightbox')){if(typeof closeLightbox==='function')closeLightbox();e.preventDefault()}
+    return;
+  }
+  /* / focus la barre de recherche */
+  if(e.key==='/'&&!inField){
+    const inp=_focusableSearch();
+    if(inp){inp.focus();inp.select?.();e.preventDefault()}
+    return;
+  }
+  /* ←/→ : navigation entre cartes si modal détail ouvert */
+  if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&!inField){
+    if(document.getElementById('__modal')){
+      _navCardDetail(e.key==='ArrowLeft'?-1:1);
+      e.preventDefault();
+      return;
+    }
+  }
+  if(inField)return;
+  /* g + lettre : switch view (style Gmail/GitHub) */
+  if(_kbdGotoBuffer==='g'){
+    const v=_gotoMap[e.key];
+    _kbdGotoBuffer=null;clearTimeout(_kbdGotoTimer);
+    if(v){switchView(v);e.preventDefault();toast('→ '+v,'ok')}
+    return;
+  }
+  if(e.key==='g'){
+    _kbdGotoBuffer='g';
+    _kbdGotoTimer=setTimeout(()=>{_kbdGotoBuffer=null},1200);
+    e.preventDefault();
+  }
+});
 
 /* ==================== INIT ==================== */
 loadLocal();
