@@ -519,7 +519,7 @@ const LIBRARY_TTL_MS=24*3600*1000; // 24h cache
 let _libManifest=null;
 let _libManifestPromise=null;
 
-const LIBRARY_MIN_VERSION=2;
+const LIBRARY_MIN_VERSION=3;
 let _lastCollectionRefreshAt=0;
 async function loadLibraryManifest(){
   if(_libManifest)return _libManifest;
@@ -580,15 +580,16 @@ function _libEntryPath(entry){
   return entry.p||null;
 }
 
-function _libEntryFor(lang,cardId){
+function _libEntryFor(game,lang,cardId){
   if(!_libManifest||!cardId)return null;
+  const g=(game||'pokemon').toLowerCase();
   const l=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
-  const key=l+'|'+String(cardId).toLowerCase();
+  const key=g+'|'+l+'|'+String(cardId).toLowerCase();
   return (_libManifest.cards||{})[key]||null;
 }
 
-function libraryUrlFor(lang,cardId){
-  const entry=_libEntryFor(lang,cardId);
+function libraryUrlFor(game,lang,cardId){
+  const entry=_libEntryFor(game,lang,cardId);
   const path=_libEntryPath(entry);
   if(!path)return null;
   return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
@@ -603,21 +604,19 @@ function refreshCollectionFromLibrary(){
   if(!u||!Array.isArray(u.cards))return {touched:0,total:0};
   let touched=0;
   for(const c of u.cards){
-    if(c.game!=='pokemon')continue;
-    /* Identifie le pokeId */
-    let pokeId=c._pokeId;
-    if(!pokeId&&c.setCode&&c.number)pokeId=c.setCode+'-'+c.number;
-    if(!pokeId)continue;
+    let cardId=_libCardIdFor(c);
+    if(!cardId&&c.setCode&&c.number)cardId=c.setCode+'-'+c.number;
+    if(!cardId)continue;
     /* Derive setCode/number si manquant */
     if(!c.setCode||!c.number){
-      const m=String(pokeId).match(/^(.+)-([A-Za-z0-9_]+)$/);
+      const m=String(cardId).match(/^(.+)-([A-Za-z0-9_]+)$/);
       if(m){
         if(!c.setCode){c.setCode=m[1];touched++}
         if(!c.number){c.number=m[2];touched++}
       }
     }
     /* Library enrichment */
-    const entry=_libEntryFor(c.lang||'en',pokeId);
+    const entry=_libEntryFor(c.game,c.lang||'en',cardId);
     if(entry&&typeof entry==='object'){
       let changed=false;
       if(entry.p){
@@ -627,7 +626,8 @@ function refreshCollectionFromLibrary(){
       if(entry.sn&&c.set!==entry.sn){c.set=entry.sn;changed=true}
       if(entry.s&&c.setCode!==entry.s){c.setCode=entry.s;changed=true}
       if(entry.no&&c.number!==entry.no){c.number=entry.no;changed=true}
-      if(!c._pokeId){c._pokeId=pokeId;changed=true}
+      const idField={pokemon:'_pokeId',onepiece:'_opId',mtg:'_mtgId',yugioh:'_ygoId'}[c.game]||'_pokeId';
+      if(!c[idField]){c[idField]=cardId;changed=true}
       if(changed){c.updatedAt=Date.now();touched++}
     }
   }
@@ -642,20 +642,30 @@ function refreshCollectionFromLibrary(){
   return {touched,total:u.cards.length};
 }
 
-/* Enrichit les cartes Pokemon avec image R2 + nom de set/setCode/numero depuis le manifest */
+/* Resout l'ID utilise dans le manifest selon le jeu */
+function _libCardIdFor(c){
+  if(c.game==='pokemon')return c._pokeId;
+  if(c.game==='onepiece')return c._opId;
+  if(c.game==='mtg')return c._mtgId||c.setCode+'-'+c.number;
+  if(c.game==='yugioh')return c._ygoId;
+  return c._pokeId||c._opId||c._mtgId||c._ygoId;
+}
+
+/* Enrichit les cartes (tous jeux) avec image R2 + nom de set/setCode/numero depuis le manifest */
 function applyLibraryToResults(cards){
   if(!_libManifest||!Array.isArray(cards))return cards;
   for(const c of cards){
-    if(c.game!=='pokemon')continue;
-    /* Derive setCode + number depuis _pokeId si pas defini (ex "swsh3.5-10" -> "swsh3.5","10") */
-    if(c._pokeId){
-      const m=c._pokeId.match(/^(.+)-([A-Za-z0-9_]+)$/);
+    const cardId=_libCardIdFor(c);
+    if(!cardId)continue;
+    /* Derive setCode + number depuis l'ID si pas defini (ex "swsh3.5-10" -> "swsh3.5","10") */
+    if(typeof cardId==='string'){
+      const m=cardId.match(/^(.+)-([A-Za-z0-9_]+)$/);
       if(m){
         if(!c.setCode)c.setCode=m[1];
         if(!c.number)c.number=m[2];
       }
     }
-    const entry=_libEntryFor(c.lang,c._pokeId);
+    const entry=_libEntryFor(c.game,c.lang,cardId);
     if(!entry||typeof entry!=='object')continue;
     if(entry.p){
       c.image=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
@@ -667,20 +677,24 @@ function applyLibraryToResults(cards){
   return cards;
 }
 
-/* Recherche dans la library (manifest enrichi) par nom + filtres set/numero/lang */
-function searchLibrary(q,lang,opts){
+/* Recherche dans la library (manifest enrichi) par game + nom + filtres set/numero/lang */
+function searchLibrary(game,q,lang,opts){
   if(!_libManifest||!_libManifest.cards)return [];
   opts=opts||{};
+  const targetGame=(game||'pokemon').toLowerCase();
   const targetLang=(lang||'en').toLowerCase()==='jp'?'ja':(lang||'en').toLowerCase();
   const qNorm=(q||'').toLowerCase().trim();
   const setNorm=(opts.set||'').toLowerCase().trim();
   const numNorm=String(opts.number||'').replace(/^0+/,'').toLowerCase().trim();
+  const idField={pokemon:'_pokeId',onepiece:'_opId',mtg:'_mtgId',yugioh:'_ygoId'}[targetGame]||'_pokeId';
   const out=[];
   for(const [key,entry] of Object.entries(_libManifest.cards)){
-    const [l,cardId]=key.split('|',2);
+    const parts=key.split('|',3);
+    if(parts.length<3)continue;
+    const [g,l,cardId]=parts;
+    if(g!==targetGame)continue;
     if(l!==targetLang)continue;
     if(typeof entry!=='object')continue;
-    /* Filtres */
     if(qNorm){
       const n=(entry.n||'').toLowerCase();
       if(!n.includes(qNorm))continue;
@@ -694,11 +708,10 @@ function searchLibrary(q,lang,opts){
       const no=String(entry.no||'').replace(/^0+/,'').toLowerCase();
       if(no!==numNorm)continue;
     }
-    /* Construit l'objet de carte */
     const path=entry.p;
     const url=_libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
-    out.push({
-      id:uid(),game:'pokemon',
+    const card={
+      id:uid(),game:targetGame,
       name:entry.n||cardId,
       printedName:entry.n||cardId,
       set:entry.sn||entry.s||'',
@@ -706,10 +719,11 @@ function searchLibrary(q,lang,opts){
       number:entry.no||'',
       image:url,
       price:null,
-      lang:targetLang==='ja'?'ja':targetLang,
-      _pokeId:cardId,
+      lang:targetLang,
       _libraryHit:true,
-    });
+    };
+    card[idField]=cardId;
+    out.push(card);
   }
   return out;
 }
@@ -1556,7 +1570,7 @@ async function searchOnePiece(q,lang,limit,opts){
     }
     return true;
   }).slice(0,limit);
-  return filtered.map(c=>({
+  const out=filtered.map(c=>({
     id:uid(),game:'onepiece',
     name:c.name,printedName:c.name,
     set:c._setName||'',setCode:c._setLabel||'',
@@ -1565,6 +1579,8 @@ async function searchOnePiece(q,lang,limit,opts){
     price:null,lang:useJa?'ja':'en',
     _opId:c.id
   }));
+  await loadLibraryManifest();
+  return mergeWithLibrary(out,'onepiece',q,useJa?'ja':'en',opts,limit);
 }
 
 async function searchScryfall(q,lang,limit,opts){
@@ -1610,13 +1626,15 @@ async function searchScryfall(q,lang,limit,opts){
         number:c.collector_number,
         image:c.image_uris?.normal||c.card_faces?.[0]?.image_uris?.normal||'',
         price:price!=null?Math.round(price*100)/100:null,
-        lang:c.lang||lang
+        lang:c.lang||lang,
+        _mtgId:c.set+'-'+c.collector_number
       });
     });
     url=j.has_more?j.next_page:null;
     pages++;
   }
-  return all.slice(0,limit);
+  await loadLibraryManifest();
+  return mergeWithLibrary(all.slice(0,limit),'mtg',q,lang,opts,limit);
 }
 
 // Génère une liste d'IDs candidats pokemontcg.io à partir d'un ID TCGdex
@@ -1702,7 +1720,7 @@ async function searchPokemon(q,lang,limit,opts){
       const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
       return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
     });
-    return mergeWithLibrary(out,q,lang,opts,limit);
+    return mergeWithLibrary(out,'pokemon',q,lang,opts,limit);
   }
   // Autres langues → TCGdex
   if(!L.tcgdex)return [];
@@ -1775,17 +1793,16 @@ async function searchPokemon(q,lang,limit,opts){
   //    Pour FR/JP on ne fait pas le fallback prix non plus (pas de cours pokemontcg.io adapte).
   // Si beaucoup de cartes n'ont pas d'image, applyLibraryToResults remplira via R2.
   await libPromise;
-  return mergeWithLibrary(cards,q,lang,opts,limit||60);
+  return mergeWithLibrary(cards,'pokemon',q,lang,opts,limit||60);
 }
 
 /* Fusionne resultats API avec library (ajoute les cartes que l'API n'a pas, override images) */
-function mergeWithLibrary(apiCards,q,lang,opts,limit){
+function mergeWithLibrary(apiCards,game,q,lang,opts,limit){
   const out=Array.isArray(apiCards)?apiCards.slice():[];
   applyLibraryToResults(out);
   if(!_libManifest)return out;
-  /* Ajoute les cartes presentes dans la library mais absentes de l'API */
-  const seen=new Set(out.map(c=>(c._pokeId||'').toLowerCase()));
-  const libExtra=searchLibrary(q,lang,opts).filter(c=>!seen.has((c._pokeId||'').toLowerCase()));
+  const seen=new Set(out.map(c=>(_libCardIdFor(c)||'').toLowerCase()));
+  const libExtra=searchLibrary(game,q,lang,opts).filter(c=>!seen.has((_libCardIdFor(c)||'').toLowerCase()));
   if(libExtra.length){
     for(const c of libExtra){if(out.length>=limit)break;out.push(c)}
   }
