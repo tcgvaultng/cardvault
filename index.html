@@ -30,8 +30,14 @@
   --radius:14px;--radius-sm:8px;--radius-lg:20px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Exo 2',system-ui,sans-serif;font-size:15px;line-height:1.45;overflow-x:hidden}
-body{background:radial-gradient(1200px 600px at 10% -10%,rgba(123,62,216,.18),transparent 60%),radial-gradient(1000px 500px at 110% 10%,rgba(201,160,75,.12),transparent 55%),linear-gradient(180deg,#0b0618 0%,#0a0420 100%);min-height:100vh;min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--font-body,'Exo 2',system-ui,sans-serif);font-size:15px;line-height:1.45;overflow-x:hidden}
+body{min-height:100vh;min-height:100dvh;padding-bottom:env(safe-area-inset-bottom);background:var(--bg);position:relative}
+body.theme-bg-aurora{background:radial-gradient(1200px 600px at 10% -10%,color-mix(in srgb,var(--violet) 30%,transparent),transparent 60%),radial-gradient(1000px 500px at 110% 10%,color-mix(in srgb,var(--gold) 20%,transparent),transparent 55%),linear-gradient(180deg,var(--bg-2,var(--bg)) 0%,var(--bg) 100%)}
+body.theme-bg-solid{background:var(--bg)}
+body.theme-bg-gradient{background:linear-gradient(180deg,var(--surface) 0%,var(--bg) 100%)}
+body.theme-bg-image{background:var(--bg-image,none) center/cover fixed,var(--bg)}
+body.theme-bg-image::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:0;pointer-events:none}
+body.theme-bg-image > *{position:relative;z-index:1}
 h1,h2,h3,h4{font-family:'Cinzel',serif;font-weight:700;letter-spacing:.02em;margin:0}
 button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:none;background:none}
 input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;outline:none;width:100%;min-width:0;max-width:100%;text-overflow:ellipsis}
@@ -265,6 +271,17 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .scan-actions>button:first-child{grid-column:1/-1} /* Démarrer caméra prend toute la ligne */
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
+
+/* === Personnalisation apparence === */
+.theme-presets{display:flex;gap:8px;flex-wrap:wrap}
+.theme-preset{cursor:pointer;border:2px solid var(--border);border-radius:10px;padding:8px;min-width:90px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .12s,border-color .12s;background:var(--surface)}
+.theme-preset:hover{transform:translateY(-2px)}
+.theme-preset.active{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,160,75,.3)}
+.theme-preset .swatch{display:flex;width:60px;height:30px;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
+.theme-preset .swatch span{flex:1}
+.theme-preset .nm{font-size:11px;color:var(--text-dim);font-weight:600}
+.theme-custom input[type=color]{width:100%;height:42px;border-radius:8px;cursor:pointer;padding:2px;background:var(--panel);border:1px solid var(--border)}
+.theme-custom input[type=range]{width:100%;height:32px}
 
 /* ==================== MOBILE petit écran (<400px) ==================== */
 @media (max-width:399px){
@@ -617,6 +634,61 @@ img.err-hide{visibility:hidden}
         <div class="panel-title">👤 Profil actif</div>
         <div id="profileInfo"></div>
         <button class="btn btn-ghost btn-block mt-10" data-act="switchProfile">🔄 Changer de profil</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">🎨 Apparence</div>
+        <div class="muted mb-10">Personnalise les couleurs et le fond du site. Synchronisé entre tes appareils.</div>
+        <div class="field">
+          <label>Préréglage</label>
+          <div id="themePresets" class="theme-presets"></div>
+        </div>
+        <div id="themeCustom" class="theme-custom">
+          <div class="row" style="flex-wrap:wrap">
+            <div class="field"><label>Or (accent principal)</label><input id="theme_gold" type="color" value="#c9a04b"></div>
+            <div class="field"><label>Violet (accent 2)</label><input id="theme_violet" type="color" value="#7b3ed8"></div>
+          </div>
+          <div class="row" style="flex-wrap:wrap">
+            <div class="field"><label>Fond principal</label><input id="theme_bg" type="color" value="#0a0420"></div>
+            <div class="field"><label>Fond panneaux</label><input id="theme_surface" type="color" value="#1a0d33"></div>
+          </div>
+          <div class="row" style="flex-wrap:wrap">
+            <div class="field"><label>Texte principal</label><input id="theme_text" type="color" value="#f2e9ff"></div>
+            <div class="field"><label>Texte atténué</label><input id="theme_textDim" type="color" value="#b8a9d4"></div>
+          </div>
+          <div class="field">
+            <label>Style de fond</label>
+            <select id="theme_bgStyle">
+              <option value="aurora">✨ Aurora (radial gradient violet+or, défaut)</option>
+              <option value="solid">⬛ Couleur unie</option>
+              <option value="gradient">🌅 Dégradé linéaire (haut → bas)</option>
+              <option value="image">🖼️ Image personnalisée</option>
+            </select>
+          </div>
+          <div class="field" id="theme_bgImageWrap" style="display:none">
+            <label>URL de l'image de fond</label>
+            <input id="theme_bgImage" placeholder="https://...">
+            <div class="hint">L'image sera affichée en fond avec un voile sombre dessus pour la lisibilité.</div>
+          </div>
+          <div class="field">
+            <label>Police de caractères</label>
+            <select id="theme_font">
+              <option value="default">Exo 2 + Cinzel (défaut)</option>
+              <option value="modern">Inter / system-ui (moderne, lisible)</option>
+              <option value="serif">Cinzel partout (élégant)</option>
+              <option value="mono">Mono (pour les nerds)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Rayon des coins arrondis</label>
+            <input id="theme_radius" type="range" min="0" max="24" step="2" value="14">
+            <div class="hint" id="theme_radiusVal">14px</div>
+          </div>
+        </div>
+        <div class="row mt-10">
+          <button class="btn btn-primary" data-act="saveTheme">💾 Enregistrer</button>
+          <button class="btn btn-ghost" data-act="resetTheme">↺ Réinitialiser</button>
+        </div>
       </div>
       <div class="panel">
         <div class="panel-title">☁️ GitHub Gist</div>
@@ -4499,6 +4571,116 @@ function renderConfig(){
   const r2p=document.getElementById('cfgR2PublicUrl');if(r2p)r2p.value=STATE.config.r2PublicUrl||'';
   const jt=document.getElementById('cfgJustTcg');if(jt)jt.value=STATE.config.justTcgKey||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
+  _renderThemePanel();
+}
+
+/* ==================== THÈMES / APPARENCE ==================== */
+const THEME_PRESETS={
+  default:{name:'Doré classique',gold:'#c9a04b',violet:'#7b3ed8',bg:'#0a0420',surface:'#1a0d33',text:'#f2e9ff',textDim:'#b8a9d4',bgStyle:'aurora',font:'default',radius:14},
+  cyber:  {name:'Cyber violet', gold:'#a855f7',violet:'#06b6d4',bg:'#020617',surface:'#0f172a',text:'#e2e8f0',textDim:'#94a3b8',bgStyle:'aurora',font:'modern',radius:8},
+  forest: {name:'Forêt',         gold:'#84cc16',violet:'#059669',bg:'#0a1f0f',surface:'#1a3324',text:'#ecfccb',textDim:'#a3c597',bgStyle:'aurora',font:'default',radius:14},
+  sunset: {name:'Coucher',       gold:'#f59e0b',violet:'#dc2626',bg:'#1a0808',surface:'#2d0f0f',text:'#fef3c7',textDim:'#fbbf24',bgStyle:'aurora',font:'default',radius:16},
+  minimal:{name:'Minimal',       gold:'#e5e7eb',violet:'#9ca3af',bg:'#000000',surface:'#0f0f0f',text:'#f9fafb',textDim:'#9ca3af',bgStyle:'solid',font:'modern',radius:6},
+  ocean:  {name:'Océan',         gold:'#06b6d4',violet:'#3b82f6',bg:'#0c1929',surface:'#1e293b',text:'#e0f2fe',textDim:'#7dd3fc',bgStyle:'aurora',font:'modern',radius:12},
+  blossom:{name:'Cerisier',      gold:'#ec4899',violet:'#a855f7',bg:'#1f0a14',surface:'#2d1322',text:'#fce7f3',textDim:'#f9a8d4',bgStyle:'aurora',font:'serif',radius:18},
+  paper:  {name:'Papier (clair)',gold:'#92400e',violet:'#7c2d12',bg:'#fef3c7',surface:'#fde68a',text:'#1c1917',textDim:'#57534e',bgStyle:'solid',font:'serif',radius:6},
+};
+const FONT_FAMILIES={
+  default:"'Exo 2',system-ui,sans-serif",
+  modern:"'Inter','Segoe UI',system-ui,sans-serif",
+  serif:"'Cinzel','Playfair Display',serif",
+  mono:"'JetBrains Mono','Fira Code',monospace",
+};
+
+function _currentTheme(){return STATE.config.theme||{...THEME_PRESETS.default}}
+function applyTheme(t){
+  if(!t)t=_currentTheme();
+  const r=document.documentElement;
+  if(t.gold){r.style.setProperty('--gold',t.gold);r.style.setProperty('--gold-2',_lighten(t.gold,12))}
+  if(t.violet){r.style.setProperty('--violet',t.violet);r.style.setProperty('--violet-2',_lighten(t.violet,15))}
+  if(t.bg){r.style.setProperty('--bg',t.bg);r.style.setProperty('--bg-2',_darken(t.bg,8))}
+  if(t.surface){r.style.setProperty('--surface',t.surface);r.style.setProperty('--surface-2',_darken(t.surface,6));r.style.setProperty('--panel',_darken(t.surface,2))}
+  if(t.text){r.style.setProperty('--text',t.text)}
+  if(t.textDim){r.style.setProperty('--text-dim',t.textDim);r.style.setProperty('--text-mute',_darken(t.textDim,18))}
+  if(t.font&&FONT_FAMILIES[t.font]){r.style.setProperty('--font-body',FONT_FAMILIES[t.font]);document.body.style.fontFamily=FONT_FAMILIES[t.font]}
+  if(t.radius!=null){
+    r.style.setProperty('--radius',t.radius+'px');
+    r.style.setProperty('--radius-sm',Math.max(2,t.radius-6)+'px');
+    r.style.setProperty('--radius-lg',(t.radius+6)+'px');
+  }
+  /* Background style */
+  const body=document.body;
+  body.classList.remove('theme-bg-aurora','theme-bg-solid','theme-bg-gradient','theme-bg-image');
+  body.classList.add('theme-bg-'+(t.bgStyle||'aurora'));
+  if(t.bgStyle==='image'&&t.bgImage){
+    body.style.setProperty('--bg-image','url('+JSON.stringify(t.bgImage)+')');
+  } else body.style.removeProperty('--bg-image');
+}
+
+function _hexToRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
+function _rgbToHex(r,g,b){return '#'+[r,g,b].map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join('')}
+function _lighten(hex,amt){const[r,g,b]=_hexToRgb(hex);const f=amt/100;return _rgbToHex(r+(255-r)*f,g+(255-g)*f,b+(255-b)*f)}
+function _darken(hex,amt){const[r,g,b]=_hexToRgb(hex);const f=1-amt/100;return _rgbToHex(r*f,g*f,b*f)}
+
+function _renderThemePanel(){
+  const t=_currentTheme();
+  const presetsBox=document.getElementById('themePresets');
+  if(presetsBox){
+    presetsBox.innerHTML=Object.entries(THEME_PRESETS).map(([k,p])=>{
+      const active=p.gold===t.gold&&p.bg===t.bg?' active':'';
+      return '<div class="theme-preset'+active+'" data-act="applyPreset" data-args="'+esc(JSON.stringify([k]))+'">'
+        +'<div class="swatch"><span style="background:'+p.bg+'"></span><span style="background:'+p.surface+'"></span><span style="background:'+p.gold+'"></span><span style="background:'+p.violet+'"></span></div>'
+        +'<div class="nm">'+esc(p.name)+'</div></div>';
+    }).join('');
+  }
+  /* Sync les inputs */
+  const setVal=(id,v)=>{const e=document.getElementById(id);if(e&&v)e.value=v};
+  setVal('theme_gold',t.gold);setVal('theme_violet',t.violet);
+  setVal('theme_bg',t.bg);setVal('theme_surface',t.surface);
+  setVal('theme_text',t.text);setVal('theme_textDim',t.textDim);
+  setVal('theme_bgStyle',t.bgStyle||'aurora');setVal('theme_font',t.font||'default');
+  setVal('theme_bgImage',t.bgImage||'');
+  const rad=document.getElementById('theme_radius');if(rad){rad.value=t.radius!=null?t.radius:14}
+  const radVal=document.getElementById('theme_radiusVal');if(radVal)radVal.textContent=(t.radius!=null?t.radius:14)+'px';
+  const bgImgWrap=document.getElementById('theme_bgImageWrap');
+  if(bgImgWrap)bgImgWrap.style.display=t.bgStyle==='image'?'block':'none';
+}
+
+function applyPreset(key){
+  const p=THEME_PRESETS[key];if(!p)return;
+  STATE.config.theme={...p};
+  applyTheme();
+  _renderThemePanel();
+  saveLocal();scheduleSync();
+  toast('Thème '+p.name+' appliqué','ok');
+}
+
+function saveTheme(){
+  const t={
+    gold:document.getElementById('theme_gold').value,
+    violet:document.getElementById('theme_violet').value,
+    bg:document.getElementById('theme_bg').value,
+    surface:document.getElementById('theme_surface').value,
+    text:document.getElementById('theme_text').value,
+    textDim:document.getElementById('theme_textDim').value,
+    bgStyle:document.getElementById('theme_bgStyle').value,
+    font:document.getElementById('theme_font').value,
+    bgImage:document.getElementById('theme_bgImage').value,
+    radius:parseInt(document.getElementById('theme_radius').value)||14,
+  };
+  STATE.config.theme=t;
+  applyTheme();
+  saveLocal();scheduleSync();
+  toast('Apparence enregistrée ✓','ok');
+}
+
+function resetTheme(){
+  if(!confirm('Réinitialiser l\'apparence au défaut ?'))return;
+  STATE.config.theme={...THEME_PRESETS.default};
+  applyTheme();
+  _renderThemePanel();
+  saveLocal();scheduleSync();
+  toast('Apparence réinitialisée','ok');
 }
 
 /* ==================== HEADER / BOOT ==================== */
@@ -4548,6 +4730,7 @@ window.addEventListener('resize',()=>{
 function bootApp(){
   document.getElementById('launch').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  applyTheme();
   updateHeader();
   _adaptHeaderToSidebar();
   renderCollections();
@@ -4574,7 +4757,8 @@ registerActions({
   saveTokenAndSync,shareGistId,saveGemini,saveR2Config,saveJustTcgKey,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,refreshAllPrices,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
   switchView,
-  cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport
+  cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport,
+  applyPreset,saveTheme,resetTheme
 });
 
 /* ==================== WIRING ==================== */
@@ -4603,6 +4787,42 @@ document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode
 });
 document.getElementById('searchGame').addEventListener('change',refreshSearchLangs);
 refreshSearchLangs();
+
+/* Live preview thème : update slider radius + show/hide image url field + live apply */
+document.addEventListener('input',e=>{
+  if(e.target.id==='theme_radius'){
+    const v=document.getElementById('theme_radiusVal');if(v)v.textContent=e.target.value+'px';
+    document.documentElement.style.setProperty('--radius',e.target.value+'px');
+    document.documentElement.style.setProperty('--radius-sm',Math.max(2,parseInt(e.target.value)-6)+'px');
+    document.documentElement.style.setProperty('--radius-lg',(parseInt(e.target.value)+6)+'px');
+  }
+  if(/^theme_(gold|violet|bg|surface|text|textDim|bgImage)$/.test(e.target.id)){
+    /* Live preview sans sauver */
+    const t={
+      gold:document.getElementById('theme_gold').value,
+      violet:document.getElementById('theme_violet').value,
+      bg:document.getElementById('theme_bg').value,
+      surface:document.getElementById('theme_surface').value,
+      text:document.getElementById('theme_text').value,
+      textDim:document.getElementById('theme_textDim').value,
+      bgStyle:document.getElementById('theme_bgStyle').value,
+      font:document.getElementById('theme_font').value,
+      bgImage:document.getElementById('theme_bgImage').value,
+      radius:parseInt(document.getElementById('theme_radius').value)||14,
+    };
+    applyTheme(t);
+  }
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='theme_bgStyle'){
+    const wrap=document.getElementById('theme_bgImageWrap');
+    if(wrap)wrap.style.display=e.target.value==='image'?'block':'none';
+    applyTheme({...(_currentTheme()),bgStyle:e.target.value});
+  }
+  if(e.target.id==='theme_font'){
+    applyTheme({...(_currentTheme()),font:e.target.value});
+  }
+});
 
 /* ==================== HOVER PREVIEW HD (desktop only) ==================== */
 let _hoverPreviewEl=null;
@@ -4740,6 +4960,7 @@ document.addEventListener('keydown',e=>{
 
 /* ==================== INIT ==================== */
 loadLocal();
+applyTheme(); /* Applique le thème dès le chargement (avant toute UI) */
 requestPersistentStorage();
 loadLibraryManifest();  /* pre-load library Pokemon en arriere-plan */
 /* Recuperation IndexedDB si localStorage vide (navigateur l'a purge, etc.) */
