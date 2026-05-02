@@ -677,7 +677,9 @@ function applyLibraryToResults(cards){
   return cards;
 }
 
-/* Recherche dans la library (manifest enrichi) par game + nom + filtres set/numero/lang */
+/* Recherche dans la library + cross-langue (taper FR dans recherche JP marche)
+   Phase 1: trouve les cardIds qui matchent le query dans n'importe quelle langue
+   Phase 2: retourne les entries dans la langue demandee */
 function searchLibrary(game,q,lang,opts){
   if(!_libManifest||!_libManifest.cards)return [];
   opts=opts||{};
@@ -687,6 +689,22 @@ function searchLibrary(game,q,lang,opts){
   const setNorm=(opts.set||'').toLowerCase().trim();
   const numNorm=String(opts.number||'').replace(/^0+/,'').toLowerCase().trim();
   const idField={pokemon:'_pokeId',onepiece:'_opId',mtg:'_mtgId',yugioh:'_ygoId'}[targetGame]||'_pokeId';
+
+  /* Phase 1 : si query non-vide, on collecte les cardIds qui matchent dans n'importe quelle langue */
+  let crossLangIds=null;
+  if(qNorm){
+    crossLangIds=new Set();
+    for(const [key,entry] of Object.entries(_libManifest.cards)){
+      const parts=key.split('|',3);
+      if(parts.length<3)continue;
+      if(parts[0]!==targetGame)continue;
+      if(typeof entry!=='object')continue;
+      const n=(entry.n||'').toLowerCase();
+      if(n&&n.includes(qNorm))crossLangIds.add(parts[2]);
+    }
+  }
+
+  /* Phase 2 : retourne les entries dans la langue demandee */
   const out=[];
   for(const [key,entry] of Object.entries(_libManifest.cards)){
     const parts=key.split('|',3);
@@ -697,7 +715,9 @@ function searchLibrary(game,q,lang,opts){
     if(typeof entry!=='object')continue;
     if(qNorm){
       const n=(entry.n||'').toLowerCase();
-      if(!n.includes(qNorm))continue;
+      const matchesByName=n&&n.includes(qNorm);
+      const matchesByCrossLang=crossLangIds&&crossLangIds.has(cardId);
+      if(!matchesByName&&!matchesByCrossLang)continue;
     }
     if(setNorm){
       const s=(entry.s||'').toLowerCase();
