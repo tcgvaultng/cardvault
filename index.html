@@ -2322,7 +2322,7 @@ function renderBrowse(){
   }
 
   /* Vue d'index : grouper par setCode */
-  const sets=new Map(); // setCode -> {name, code, count, sample(image)}
+  const sets=new Map();
   for(const [key,entry] of Object.entries(_libManifest.cards)){
     const parts=key.split('|',3);
     if(parts.length<3)continue;
@@ -2331,30 +2331,54 @@ function renderBrowse(){
     if(typeof entry!=='object')continue;
     const sc=(entry.s||parts[2].split('-')[0]||'').toLowerCase();
     if(!sc)continue;
-    if(!sets.has(sc))sets.set(sc,{code:sc,name:entry.sn||sc.toUpperCase(),count:0,sample:''});
+    if(!sets.has(sc))sets.set(sc,{code:sc,name:entry.sn||sc.toUpperCase(),count:0,sampleCard:''});
     const s=sets.get(sc);
     s.count++;
-    if(!s.sample&&entry.p){
-      s.sample=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
+    if(!s.sampleCard&&entry.p){
+      s.sampleCard=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
     }
     if(entry.sn&&!s.namedFromManifest){s.name=entry.sn;s.namedFromManifest=true}
   }
+  /* Enrichit avec sets metadata (logo + releaseDate) */
+  const setsMeta=_libManifest.sets||{};
+  for(const s of sets.values()){
+    const meta=setsMeta[game+'|'+lang+'|'+s.code]||setsMeta[game+'|en|'+s.code]||{};
+    s.logo=meta.logo||'';
+    s.releaseDate=meta.releaseDate||'';
+    s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
+    if(meta.name&&!s.namedFromManifest)s.name=meta.name;
+  }
   let arr=Array.from(sets.values());
   if(filter)arr=arr.filter(s=>s.name.toLowerCase().includes(filter)||s.code.includes(filter));
-  arr.sort((a,b)=>a.name.localeCompare(b.name));
+  /* Tri par date de sortie (plus recent en premier) */
+  arr.sort((a,b)=>{
+    /* OP : utiliser orderIndex (inverse car index 0 = plus ancien) */
+    if(a.orderIndex!=null&&b.orderIndex!=null)return b.orderIndex-a.orderIndex;
+    /* Sinon par releaseDate desc */
+    const da=a.releaseDate||'',db=b.releaseDate||'';
+    if(da&&db&&da!==db)return db.localeCompare(da);
+    if(da&&!db)return -1;
+    if(!da&&db)return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   if(arr.length===0){
     box.innerHTML='<div class="empty"><div class="ic">🗂️</div><h3>Aucune extension</h3><p class="muted">Pas de cartes pour '+game+' / '+lang+' dans la library.</p></div>';
     return;
   }
 
-  box.innerHTML='<div class="muted mb-10">'+arr.length+' extensions • '+arr.reduce((s,x)=>s+x.count,0)+' cartes</div>'
+  box.innerHTML='<div class="muted mb-10">'+arr.length+' extensions • '+arr.reduce((s,x)=>s+x.count,0)+' cartes (triees par date de sortie)</div>'
     +'<div class="coll-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">'
     +arr.map(s=>{
+      const cover=s.logo||s.sampleCard;
+      const fallback=s.sampleCard;
+      const releaseTxt=s.releaseDate?(' • '+s.releaseDate.slice(0,4)):'';
       return '<div class="coll-card" data-act="browseOpenSet" data-args="'+esc(JSON.stringify([s.code]))+'" style="padding:8px">'
-        +'<img src="'+esc(s.sample||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;height:160px;object-fit:contain;border-radius:6px;background:rgba(0,0,0,.3)">'
+        +'<div style="background:rgba(0,0,0,.3);border-radius:6px;height:120px;display:flex;align-items:center;justify-content:center;padding:8px">'
+        +'<img src="'+esc(cover||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(fallback||PLACEHOLDER_IMG)+'" style="max-width:100%;max-height:100%;object-fit:contain">'
+        +'</div>'
         +'<div style="margin-top:6px;font-family:Cinzel,serif;font-size:13px;line-height:1.2">'+esc(s.name)+'</div>'
-        +'<div style="font-size:11px;color:var(--gold-2);margin-top:2px">'+s.code.toUpperCase()+' • '+s.count+' cartes</div>'
+        +'<div style="font-size:11px;color:var(--gold-2);margin-top:2px">'+s.code.toUpperCase()+' • '+s.count+' cartes'+esc(releaseTxt)+'</div>'
         +'</div>';
     }).join('')+'</div>';
 }
