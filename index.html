@@ -123,6 +123,10 @@ body.card-dragging .coll-card{cursor:copy}
 .card-row .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-row .sub{font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-row .price{font-weight:700;color:var(--gold-2);font-family:'Cinzel',serif;font-size:14px;white-space:nowrap}
+/* Pill quantité dans la card-row : toujours visible, plus prononcé si >1 */
+.card-row .qty-pill{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:38px;padding:4px 10px;border-radius:999px;font-weight:700;font-size:13px;background:rgba(255,255,255,.06);color:var(--text-dim);border:1px solid var(--border);font-family:'Cinzel',serif;letter-spacing:.02em;white-space:nowrap}
+.card-row .qty-pill.qty-multi{background:linear-gradient(135deg,rgba(201,160,75,.25),rgba(160,102,255,.18));color:var(--gold);border-color:rgba(201,160,75,.5);font-size:14px;box-shadow:0 2px 8px rgba(201,160,75,.2)}
+@media (max-width:399px){.card-row .qty-pill{min-width:32px;padding:3px 7px;font-size:11px}}
 
 /* === Vue Cartes : toolbar + galerie + bulk === */
 .cards-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
@@ -144,7 +148,7 @@ body.card-dragging .coll-card{cursor:copy}
 .gallery-card img{width:100%;height:100%;object-fit:cover;display:block}
 .gallery-card .gc-name{padding:8px 4px 0;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gallery-card .gc-sub{padding:0 4px;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gallery-card .qty-badge{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.85);color:#fff;font-weight:700;padding:3px 8px;border-radius:6px;font-size:12px;z-index:2}
+.gallery-card .qty-badge{position:absolute;top:8px;left:8px;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#231300;font-weight:800;padding:5px 10px;border-radius:8px;font-size:14px;z-index:2;font-family:'Cinzel',serif;box-shadow:0 3px 10px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.2) inset;letter-spacing:.02em;line-height:1.1}
 .gallery-card .price-badge{position:absolute;top:8px;right:8px;background:linear-gradient(135deg,rgba(201,160,75,.95),rgba(160,102,255,.85));color:#fff;font-weight:700;padding:4px 8px;border-radius:6px;font-size:11px;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.4)}
 .gallery-card .foil-badge{position:absolute;bottom:8px;left:8px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-weight:700;padding:3px 7px;border-radius:5px;font-size:10px;z-index:2}
 .gallery-card .game-dot{position:absolute;bottom:8px;right:8px;width:14px;height:14px;border-radius:50%;border:2px solid rgba(0,0,0,.6);z-index:2}
@@ -2293,12 +2297,15 @@ function renderCardRow(c,opts){
   const action=opts.action||'openCardDetail';
   const sel=opts.selectable&&_cardsSelection.has(c.id)?' selected':'';
   const g=GAMES[c.game]||{name:c.game,color:'#888'};
+  const qty=c.quantity||1;
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
   const moveBtn=opts.movable!==false?'<button type="button" class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection">📁</button>':'';
+  const qtyPill='<span class="qty-pill'+(qty>1?' qty-multi':'')+'" title="'+qty+' exemplaire'+(qty>1?'s':'')+'">×'+qty+'</span>';
   return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
-    +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+((c.quantity||1)>1?' • x'+c.quantity:'')+'</div></div>'
+    +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+'</div></div>'
+    +qtyPill
     +'<div class="price">'+fmtEur(c.price)+'</div>'+moveBtn+'</div>';
 }
 
