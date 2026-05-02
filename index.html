@@ -293,13 +293,38 @@ img.err-hide{visibility:hidden}
 
 /* ==================== DESKTOP / PC (≥1100px) ==================== */
 @media (min-width:1100px){
-  #app{max-width:1280px;margin:0 auto;width:100%}
+  /* === SIDEBAR : tabbar transformée en barre verticale gauche, 60px → 200px hover === */
+  body{--sidebar-w:64px}
+  .tabbar{
+    position:fixed;top:0;left:0;bottom:0;right:auto;
+    width:var(--sidebar-w);max-width:none;margin:0;
+    flex-direction:column;justify-content:flex-start;align-items:stretch;
+    gap:2px;padding:64px 6px 16px;
+    border-top:none;border-right:1px solid var(--border);
+    box-shadow:4px 0 20px rgba(0,0,0,.4);
+    overflow:hidden;transition:width .2s ease;
+    z-index:30;
+  }
+  .tabbar:hover,.tabbar:focus-within{width:220px}
+  .tabbar button{
+    display:flex;flex-direction:row;align-items:center;justify-content:flex-start;
+    gap:14px;padding:10px 12px;margin:1px 0;
+    min-width:0;max-width:none;flex:0 0 auto;
+    min-height:44px;border-radius:8px;
+    font-size:14px;text-align:left;white-space:nowrap;overflow:hidden;
+  }
+  .tabbar button .ic{font-size:22px;line-height:1;width:32px;flex-shrink:0;text-align:center}
+  .tabbar button .lbl{opacity:0;transition:opacity .15s ease;flex:1;min-width:0}
+  .tabbar:hover button .lbl,.tabbar:focus-within button .lbl{opacity:1;transition-delay:.05s}
+  .tabbar button.active{background:rgba(201,160,75,.14);color:var(--gold);font-weight:600}
+  .tabbar button:hover{background:rgba(255,255,255,.04)}
+
+  /* App container : layout côte-à-côte (sidebar + reste) */
+  #app{max-width:none;width:100%;padding-left:var(--sidebar-w);transition:padding-left .2s ease}
   .topbar{padding:14px 32px;max-width:1280px;margin:0 auto}
   .topbar h1{font-size:24px}
-  main{padding:28px 32px 110px;max-width:1280px;margin:0 auto}
-  .tabbar{max-width:1280px;margin:0 auto;padding:10px 0 calc(10px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.4);justify-content:center;gap:24px}
-  .tabbar button{min-width:110px;padding:8px 18px;font-size:13px}
-  .tabbar button .ic{font-size:24px}
+  main{padding:28px 32px 32px;max-width:1280px;margin:0 auto}
+
   /* Sur desktop : grille 320-360px → 3-4 colonnes minimum sur 1280px container */
   #collectionsGrid.coll-grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
   #collectionsGrid .coll-card{min-height:200px;padding:20px}
@@ -329,6 +354,9 @@ img.err-hide{visibility:hidden}
   .sync-status{max-width:240px;font-size:12px}
   /* Browse extension grid plus large */
   #browseContent .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))!important;gap:12px}
+
+  /* Bulk actions : aligné avec le contenu (sidebar à gauche, plus de tabbar en bas) */
+  .bulk-actions{left:var(--sidebar-w);bottom:0;transition:left .2s ease}
 }
 
 /* ==================== Touch targets — toutes tailles ==================== */
@@ -597,12 +625,12 @@ img.err-hide{visibility:hidden}
   </main>
 
   <nav class="tabbar" id="tabbar">
-    <button data-view="collections" class="active"><span class="ic">📚</span>Coll.</button>
-    <button data-view="add"><span class="ic">➕</span>Ajouter</button>
-    <button data-view="browse"><span class="ic">🗂️</span>Parcourir</button>
-    <button data-view="cards"><span class="ic">🔎</span>Cartes</button>
-    <button data-view="compare"><span class="ic">⚖️</span>Comp.</button>
-    <button data-view="config"><span class="ic">⚙️</span>Config</button>
+    <button data-view="collections" class="active"><span class="ic">📚</span><span class="lbl">Coll.</span></button>
+    <button data-view="add"><span class="ic">➕</span><span class="lbl">Ajouter</span></button>
+    <button data-view="browse"><span class="ic">🗂️</span><span class="lbl">Parcourir</span></button>
+    <button data-view="cards"><span class="ic">🔎</span><span class="lbl">Cartes</span></button>
+    <button data-view="compare"><span class="ic">⚖️</span><span class="lbl">Comp.</span></button>
+    <button data-view="config"><span class="ic">⚙️</span><span class="lbl">Config</span></button>
   </nav>
 </div>
 
