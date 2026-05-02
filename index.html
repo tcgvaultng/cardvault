@@ -1036,17 +1036,28 @@ function imgTag(src,extraAttrs){
 }
 
 /* ==================== LIGHTBOX (zoom carte) ==================== */
-let _lightboxBack=null;
 function openLightbox(frontUrl,backUrl){
   closeLightbox();
   if(!frontUrl||frontUrl===PLACEHOLDER_IMG)return;
-  _lightboxBack=backUrl||null;
+  /* Si verso ET ecran assez large, afficher les 2 cotes cote a cote.
+     Une carte fait ratio ~5/7 ; en mode side-by-side on veut
+     2 images a hauteur 80vh -> chacune ~57vh de largeur -> 114vh total horizontal.
+     On active le mode dual si window.innerWidth >= window.innerHeight * 1.3. */
+  const dual=!!backUrl && window.innerWidth >= window.innerHeight * 1.3;
   const lb=document.createElement('div');
   lb.className='lightbox';lb.id='__lightbox';lb.dataset.side='front';lb.dataset.front=frontUrl;
   if(backUrl)lb.dataset.back=backUrl;
-  lb.innerHTML='<img src="'+esc(frontUrl)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
-    +'<button class="lightbox-close" aria-label="Fermer">✕</button>'
-    +(backUrl?'<button class="lightbox-flip">↻ Retourner</button>':'');
+  if(dual){
+    lb.innerHTML='<div style="display:flex;gap:16px;align-items:center;justify-content:center;width:100%;padding:0 12px">'
+      +'<img src="'+esc(frontUrl)+'" alt="recto" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="max-width:48vw;max-height:88vh">'
+      +'<img src="'+esc(backUrl)+'" alt="verso" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="max-width:48vw;max-height:88vh">'
+      +'</div>'
+      +'<button class="lightbox-close" aria-label="Fermer">✕</button>';
+  } else {
+    lb.innerHTML='<img src="'+esc(frontUrl)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
+      +'<button class="lightbox-close" aria-label="Fermer">✕</button>'
+      +(backUrl?'<button class="lightbox-flip">↻ Retourner</button>':'');
+  }
   lb.addEventListener('click',e=>{
     if(e.target.classList.contains('lightbox-close')||e.target===lb){closeLightbox();return}
     if(e.target.classList.contains('lightbox-flip')){
