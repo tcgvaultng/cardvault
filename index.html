@@ -329,16 +329,20 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
 .move-target-arrow{color:var(--gold);font-size:18px;font-weight:700;opacity:.5;transition:opacity .15s,transform .15s}
 .move-target:hover .move-target-arrow{opacity:1;transform:translateX(3px)}
 
-/* Bouton "déplacer" sur les card-rows (visible au hover desktop, toujours sur mobile) */
-.card-row .row-move{position:absolute;right:8px;top:50%;transform:translateY(-50%);opacity:0;transition:opacity .15s;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:14px;color:var(--text-dim);cursor:pointer;z-index:2}
+/* Bouton "déplacer" sur les card-rows : flex item APRÈS le prix (pas d'overlap) */
+.card-row .row-move{flex:0 0 auto;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--border);border-radius:6px;font-size:16px;color:var(--text-dim);cursor:pointer;transition:opacity .15s,background .15s,border-color .15s,color .15s;padding:0;margin-left:6px;font-family:inherit}
 .card-row:hover .row-move{opacity:1}
 .card-row .row-move:hover{background:var(--surface);color:var(--gold);border-color:var(--gold)}
-@media (hover:none){.card-row .row-move{opacity:.7}}
+/* Sur desktop avec hover : caché par défaut, visible au hover */
+@media (hover:hover){.card-row .row-move{opacity:.5}.card-row:hover .row-move{opacity:1}}
 
-/* Bouton déplacer sur galerie : overlay coin haut-droit (sous le prix) */
-.gallery-card .gc-move{position:absolute;top:8px;right:8px;opacity:0;transition:opacity .15s;background:rgba(0,0,0,.85);color:#fff;padding:4px 7px;border-radius:6px;font-size:11px;z-index:3;cursor:pointer}
+/* Bouton déplacer sur galerie : positionné sous le price-badge */
+.gallery-card .gc-move{position:absolute;top:8px;left:8px;opacity:0;transition:opacity .15s;background:rgba(0,0,0,.85);color:#fff;padding:6px 8px;border-radius:6px;font-size:13px;z-index:3;cursor:pointer;border:none;font-family:inherit;line-height:1}
 .gallery-card:hover .gc-move{opacity:1}
-.gallery-card.has-price .gc-move{top:36px} /* sous le price-badge si présent */
+.gallery-card .gc-move:hover{background:var(--gold);color:#231300}
+/* Si la carte a un qty-badge en top-left, le move-button passe en bas-left */
+.gallery-card .qty-badge ~ .gc-move,.gallery-card.has-price .gc-move{top:auto;bottom:8px;left:8px}
+.gallery-card.foil-badge ~ .gc-move{bottom:36px}
 
 /* ==================== MOBILE petit écran (<400px) ==================== */
 @media (max-width:399px){
@@ -2286,7 +2290,7 @@ function renderCardRow(c,opts){
   const sel=opts.selectable&&_cardsSelection.has(c.id)?' selected':'';
   const g=GAMES[c.game]||{name:c.game,color:'#888'};
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
-  const moveBtn=opts.movable!==false?'<span class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection" onclick="event.stopPropagation()">📁</span>':'';
+  const moveBtn=opts.movable!==false?'<button type="button" class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection">📁</button>':'';
   return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
@@ -2589,7 +2593,7 @@ function renderGalleryCard(c){
   const price=c.price!=null?'<span class="price-badge">'+fmtEur(c.price)+'</span>':'';
   const foil=c.foil?'<span class="foil-badge">✨ FOIL</span>':'';
   const dot='<span class="game-dot" style="background:'+g.color+'" title="'+esc(g.name)+'"></span>';
-  const moveBtn='<span class="gc-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection" onclick="event.stopPropagation()">📁</span>';
+  const moveBtn='<button type="button" class="gc-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection">📁</button>';
   return '<div class="gallery-card'+sel+hasPrice+'" data-act="cardClick" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +'<div class="img-wrap">'+img+qty+price+foil+dot+moveBtn+'</div>'
     +'<div class="gc-name">'+esc(c.name)+'</div>'
