@@ -3105,25 +3105,70 @@ async function ocrCardBottom(srcCanvas){
   return r.data.text||'';
 }
 
-function parseCollectorNumber(ocrText){
+/* Build une fois : Set { setCode: bool } pour chaque jeu, à partir du manifest.
+   Ça permet de valider que le set code détecté par OCR existe vraiment. */
+let _knownSetCodesByGame=null;
+function _getKnownSetCodes(){
+  if(_knownSetCodesByGame||!_libManifest||!_libManifest.cards)return _knownSetCodesByGame;
+  _knownSetCodesByGame={pokemon:new Set(),mtg:new Set(),onepiece:new Set(),yugioh:new Set(),all:new Set()};
+  for(const k in _libManifest.cards){
+    const parts=k.split('|',3);
+    if(parts.length!==3)continue;
+    const [g,,cardId]=parts;
+    const m=cardId.match(/^([a-z0-9]+)-/);
+    if(!m)continue;
+    const sc=m[1];
+    _knownSetCodesByGame.all.add(sc);
+    if(_knownSetCodesByGame[g])_knownSetCodesByGame[g].add(sc);
+  }
+  return _knownSetCodesByGame;
+}
+
+function parseCollectorNumber(ocrText,gameFilter){
   if(!ocrText)return null;
   const T=ocrText.replace(/[^\w\s\/\-\.]/g,' ').replace(/\s+/g,' ').toUpperCase().trim();
-  /* Patterns par jeu */
-  /* MTG/Pokemon "327/411" ou "1/102" */
-  let m=T.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
-  if(m){
-    const num=parseInt(m[1]);
-    /* Cherche un set code à proximité : 2-5 lettres */
-    const setM=T.match(/\b([A-Z]{2,5})\b/);
-    return {number:num,total:parseInt(m[2]),setCode:setM?setM[1].toLowerCase():null};
+  const known=_getKnownSetCodes();
+  const validSet=sc=>{
+    if(!known)return true;
+    sc=sc.toLowerCase();
+    if(gameFilter&&gameFilter!=='auto')return known[gameFilter]&&known[gameFilter].has(sc);
+    return known.all.has(sc);
+  };
+  /* Tente d'extraire toutes les paires (setCode,number) candidates */
+  const candidates=[];
+  /* Pattern A : "OP01-001" ou "EB01-002" - One Piece, set+number en un bloc */
+  for(const m of T.matchAll(/\b([A-Z]{2,4}\d{1,2})\s*[-–]\s*(\d{1,4})\b/g)){
+    candidates.push({setCode:m[1].toLowerCase(),number:parseInt(m[2]),source:'OPxx-xxx'});
   }
-  /* One Piece "OP01-001", "EB01-002" */
-  m=T.match(/\b([A-Z]{2,4}\d{1,2})\s*-\s*(\d{1,4})\b/);
-  if(m)return {number:parseInt(m[2]),setCode:m[1].toLowerCase()};
-  /* MTG juste "INR 327" */
-  m=T.match(/\b([A-Z]{2,5})\b\D{0,5}(\d{1,4})\b/);
-  if(m)return {number:parseInt(m[2]),setCode:m[1].toLowerCase()};
-  return null;
+  /* Pattern B : "INR 327/411" ou "327/411 INR" */
+  for(const m of T.matchAll(/(\d{1,4})\s*\/\s*(\d{1,4})/g)){
+    const num=parseInt(m[1]),total=parseInt(m[2]);
+    if(num<1||num>total||total>9999)continue;
+    /* Cherche un set code 2-5 lettres dans tout le texte */
+    let sc=null;
+    for(const sm of T.matchAll(/\b([A-Z]{2,5})\b/g)){
+      const s=sm[1].toLowerCase();
+      if(validSet(s)){sc=s;break}
+    }
+    candidates.push({setCode:sc,number:num,total,source:'xxx/yyy'});
+  }
+  /* Pattern C : "INR 327" */
+  for(const m of T.matchAll(/\b([A-Z]{2,5})\b\s+(\d{1,4})\b/g)){
+    const sc=m[1].toLowerCase();
+    if(validSet(sc))candidates.push({setCode:sc,number:parseInt(m[2]),source:'set+num'});
+  }
+  /* Pattern D : "327 INR" inverse */
+  for(const m of T.matchAll(/\b(\d{1,4})\s+([A-Z]{2,5})\b/g)){
+    const sc=m[2].toLowerCase();
+    if(validSet(sc))candidates.push({setCode:sc,number:parseInt(m[1]),source:'num+set'});
+  }
+  /* Filtre : prefere ceux avec un set code valide */
+  const valid=candidates.filter(c=>c.setCode&&validSet(c.setCode));
+  if(valid.length)return valid[0];
+  /* Sinon retourne le premier candidat avec slashes (le plus fiable) */
+  const slash=candidates.find(c=>c.source==='xxx/yyy');
+  if(slash)return slash;
+  return candidates[0]||null;
 }
 
 function _ocrMatchesCardKey(phashKey,ocr){
@@ -3254,7 +3299,8 @@ async function captureCardOffline(){
     let ocrFiltered=false;
     if(ocrPromise){
       ocrText=await ocrPromise;
-      ocrInfo=parseCollectorNumber(ocrText);
+      await loadLibraryManifest(); /* nécessaire pour _getKnownSetCodes */
+      ocrInfo=parseCollectorNumber(ocrText,scanGame);
       if(ocrInfo){
         const filtered=matches.filter(m=>_ocrMatchesCardKey(m.key,ocrInfo));
         if(filtered.length){matches=filtered;ocrFiltered=true}
