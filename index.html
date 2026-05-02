@@ -2507,6 +2507,11 @@ function browseOpenSet(setCode){
 }
 function browseBack(){
   _browseState.selectedSet=null;
+  _browseState.filterMode='all';
+  renderBrowse();
+}
+function browseFilterMode(mode){
+  _browseState.filterMode=mode;
   renderBrowse();
 }
 function browsePickCard(idx){
@@ -2672,7 +2677,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
-  browseOpenSet,browseBack,browsePickCard,
+  browseOpenSet,browseBack,browsePickCard,browseFilterMode,
   switchView
 });
 
