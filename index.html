@@ -117,6 +117,11 @@ main{padding:16px 16px 110px}
 .empty h3{margin-bottom:6px;color:var(--text-dim)}
 
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:120;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s ease}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;align-items:center;justify-content:center;cursor:zoom-out;animation:fade .2s ease}
+.lightbox img{max-width:96vw;max-height:88vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.8);transition:transform .15s}
+.lightbox-close{position:absolute;top:16px;right:16px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.2);width:40px;height:40px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lightbox-flip{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#231300;font-weight:700;padding:10px 20px;border-radius:24px;cursor:pointer;font-size:14px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+img[data-zoom]{cursor:zoom-in}
 .modal{background:linear-gradient(180deg,var(--surface),var(--bg-2));border:1px solid var(--border);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom));animation:slide .3s cubic-bezier(.2,.9,.3,1)}
 @keyframes slide{from{transform:translateY(100%)}to{transform:none}}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)}
@@ -1027,8 +1032,55 @@ function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.active
 const PLACEHOLDER_IMG='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1a3e"/><stop offset="1" stop-color="#1a0a2e"/></linearGradient></defs><rect width="100" height="140" rx="8" fill="url(#g)"/><text x="50" y="76" text-anchor="middle" font-size="36" fill="#c9a04b">🂠</text><text x="50" y="108" text-anchor="middle" font-size="10" font-family="serif" fill="#b8a9d4">no image</text></svg>');
 function imgTag(src,extraAttrs){
   const extra=extraAttrs?(' '+extraAttrs):'';
-  return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'"'+extra+'>';
+  return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" data-zoom="1"'+extra+'>';
 }
+
+/* ==================== LIGHTBOX (zoom carte) ==================== */
+let _lightboxBack=null;
+function openLightbox(frontUrl,backUrl){
+  closeLightbox();
+  if(!frontUrl||frontUrl===PLACEHOLDER_IMG)return;
+  _lightboxBack=backUrl||null;
+  const lb=document.createElement('div');
+  lb.className='lightbox';lb.id='__lightbox';lb.dataset.side='front';lb.dataset.front=frontUrl;
+  if(backUrl)lb.dataset.back=backUrl;
+  lb.innerHTML='<img src="'+esc(frontUrl)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'">'
+    +'<button class="lightbox-close" aria-label="Fermer">✕</button>'
+    +(backUrl?'<button class="lightbox-flip">↻ Retourner</button>':'');
+  lb.addEventListener('click',e=>{
+    if(e.target.classList.contains('lightbox-close')||e.target===lb){closeLightbox();return}
+    if(e.target.classList.contains('lightbox-flip')){
+      const side=lb.dataset.side==='front'?'back':'front';
+      const url=lb.dataset[side];
+      if(url){lb.querySelector('img').src=url;lb.dataset.side=side}
+      e.stopPropagation();
+    }
+  });
+  document.body.appendChild(lb);
+  document.body.style.overflow='hidden';
+}
+function closeLightbox(){
+  const lb=document.getElementById('__lightbox');
+  if(lb)lb.remove();
+  document.body.style.overflow='';
+}
+/* Listener global : click sur img[data-zoom] -> ouvre lightbox */
+document.addEventListener('click',e=>{
+  const img=e.target.closest('img[data-zoom]');
+  if(!img)return;
+  /* Verifier qu'on ne clique pas dans un element data-act (qui doit primer) */
+  const wrapper=img.closest('[data-act]');
+  if(wrapper)return;
+  e.preventDefault();
+  e.stopPropagation();
+  /* Detecter back URL : si img est dans un wrapper avec data-back */
+  const flipWrap=img.closest('[data-front][data-back]');
+  const back=flipWrap?flipWrap.dataset.back:null;
+  openLightbox(img.src,back);
+},true);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeLightbox();
+});
 
 /* ==================== ACTION DISPATCHER (CSP-safe) ==================== */
 const ACTIONS={};
