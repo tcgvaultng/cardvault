@@ -1617,20 +1617,10 @@ async function searchPokemon(q,lang,limit,opts){
     }
     return {id:uid(),game:'pokemon',name:fullName,printedName:fullName,set:setName,image,price:null,lang,_pokeId:c.id,_imgLocalized:!!image};
   },4);
-  // 2) Fallback pokemontcg.io seulement pour cartes sans image (concurrence limitee)
-  await runLimited(cards.filter(c=>!c.image),async card=>{
-    try{
-      const data=await pokeFetchFallback(card._pokeId,card.number);
-      if(!data)return;
-      if(!card.image)card.image=data.images?.large||data.images?.small||'';
-      if(!card.set&&data.set?.name)card.set=data.set.name;
-      const cm=data.cardmarket?.prices;
-      const tp=data.tcgplayer?.prices;
-      const tpMarket=tp?Object.values(tp)[0]?.market:null;
-      let p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-      if(p!=null)card.price=Math.round(p*100)/100;
-    }catch(_){}
-  },3);
+  // 2) Fallback pokemontcg.io: SEULEMENT si on a la library qui donne l'image,
+  //    sinon on saturait pokemontcg.io en 429 pour des cards FR/JP qu'il n'a pas.
+  //    Pour FR/JP on ne fait pas le fallback prix non plus (pas de cours pokemontcg.io adapte).
+  // Si beaucoup de cartes n'ont pas d'image, applyLibraryToResults remplira via R2.
   await libPromise;
   return mergeWithLibrary(cards,q,lang,opts,limit||60);
 }
