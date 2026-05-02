@@ -3096,7 +3096,8 @@ async function captureCard(){
     const info=await geminiIdentify(base64);
     if(!info||!info.name){box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Carte non identifiée</h3><p class="muted">Réessayez avec un meilleur cadrage.</p></div>';return}
     const game=mapGame(info.game);
-    const results=await searchCards(game,info.name,5);
+    const lang=document.getElementById('searchLang')?.value||'en';
+    const results=await searchCards(game,info.name,lang,5);
     _scanCache=results.slice();
     const manual={id:uid(),name:info.name,game,set:info.set||'',image:'',price:null,_noPrice:true};
     _scanCache.push(manual);
