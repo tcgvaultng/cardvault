@@ -353,18 +353,13 @@ img.err-hide{visibility:hidden}
   .card-row{padding:12px 14px}
   .card-row img{width:60px;height:84px;flex-shrink:0}
   .card-row .nm{font-size:15px}
-  /* Card detail : 2 colonnes (image compact gauche 320px, infos+actions droite) */
-  .card-detail{display:grid;grid-template-columns:320px 1fr;gap:28px;align-items:start}
-  /* Image + bouton flip restent en col 1 */
-  .card-detail > #cardImgWrap,.card-detail > #addImgWrap{grid-column:1;grid-row:1;align-self:start}
-  .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1;grid-row:2}
-  /* Tout le reste va en col 2, auto-flow */
-  .card-detail > *{grid-column:2}
-  .card-detail > #cardImgWrap,.card-detail > #addImgWrap,
-  .card-detail > [data-act="flipCardImage"],.card-detail > [data-act="flipAddImage"]{grid-column:1}
+  /* Card detail : single column centrée (image + infos empilées) */
+  .card-detail{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:520px;margin:0 auto;text-align:center}
   .card-detail img{max-width:300px}
-  /* Modal carte : largeur raisonnable (pas géante) */
-  .modal:has(.card-detail){max-width:880px}
+  .card-detail .meta-grid,.card-detail .field,.card-detail .row{width:100%;max-width:420px;text-align:left}
+  .card-detail #cardImgWrap,.card-detail #addImgWrap{display:flex;justify-content:center}
+  /* Modal carte : largeur compacte, contenu centré */
+  .modal:has(.card-detail){max-width:640px}
   /* Forms longs : limite max-width pour lisibilité */
   .panel form,.panel .field-group{max-width:760px}
   .sync-status{max-width:240px;font-size:12px}
