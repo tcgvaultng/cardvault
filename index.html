@@ -272,6 +272,37 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Mode rétro Windows 95 (déclenché par classe body.theme-retro) === */
+body.theme-retro .panel,body.theme-retro .modal,body.theme-retro .coll-card,body.theme-retro .card-row,body.theme-retro .card-detail #cardImgWrap{
+  border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;
+  box-shadow:1px 1px 0 #808080;background:#d4d0c8
+}
+body.theme-retro .btn{
+  border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;
+  background:#d4d0c8;color:#000;font-weight:400;
+  box-shadow:none
+}
+body.theme-retro .btn:active{border-color:#404040 #fff #fff #404040;transform:none}
+body.theme-retro .btn-primary{background:#d4d0c8;color:#000}
+body.theme-retro .btn-violet{background:#000080;color:#fff;border-color:#a0a0c0 #000040 #000040 #a0a0c0}
+body.theme-retro .btn-danger{background:#d4d0c8;color:#800000}
+body.theme-retro input,body.theme-retro select,body.theme-retro textarea{
+  border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0!important;
+  background:#fff;color:#000
+}
+body.theme-retro .panel-title{color:#000080;font-family:inherit;font-size:13px;text-transform:none;letter-spacing:0}
+body.theme-retro *,body.theme-retro h1,body.theme-retro h2,body.theme-retro h3,body.theme-retro h4,body.theme-retro .cc-name,body.theme-retro .cc-value{font-family:inherit!important}
+body.theme-retro h1,body.theme-retro h2,body.theme-retro h3,body.theme-retro h4{color:#000;background:none;-webkit-text-fill-color:#000;letter-spacing:normal;text-transform:none;font-weight:700}
+body.theme-retro .cc-name,body.theme-retro .cc-value{color:#000;-webkit-text-fill-color:#000;background:none}
+body.theme-retro .price,body.theme-retro .price-big{color:#008000;font-weight:700}
+body.theme-retro .topbar{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;padding:4px 8px}
+body.theme-retro .topbar h1{color:#fff;-webkit-text-fill-color:#fff;font-size:13px;font-weight:700}
+body.theme-retro .tabbar{background:#c0c0c0;border-color:#404040 transparent transparent;border-style:solid;border-width:2px 0 0 0}
+body.theme-retro .tabbar button{border-radius:0;background:transparent;color:#000;font-size:11px}
+body.theme-retro .tabbar button.active{background:#fff;border:1px solid #404040;font-weight:700}
+body.theme-retro .chip{border-radius:0;background:#fff;color:#000;border:1px solid #808080}
+body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;color:#000;font-size:12px;font-weight:700;width:24px;height:24px}
+
 /* === Personnalisation apparence === */
 .theme-presets{display:flex;gap:8px;flex-wrap:wrap}
 .theme-preset{cursor:pointer;border:2px solid var(--border);border-radius:10px;padding:8px;min-width:90px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .12s,border-color .12s;background:var(--surface)}
@@ -677,6 +708,7 @@ img.err-hide{visibility:hidden}
               <option value="modern">Inter / system-ui (moderne, lisible)</option>
               <option value="serif">Cinzel partout (élégant)</option>
               <option value="mono">Mono (pour les nerds)</option>
+              <option value="system">MS Sans Serif / Tahoma (rétro)</option>
             </select>
           </div>
           <div class="field">
@@ -4584,12 +4616,14 @@ const THEME_PRESETS={
   ocean:  {name:'Océan',         gold:'#06b6d4',violet:'#3b82f6',bg:'#0c1929',surface:'#1e293b',text:'#e0f2fe',textDim:'#7dd3fc',bgStyle:'aurora',font:'modern',radius:12},
   blossom:{name:'Cerisier',      gold:'#ec4899',violet:'#a855f7',bg:'#1f0a14',surface:'#2d1322',text:'#fce7f3',textDim:'#f9a8d4',bgStyle:'aurora',font:'serif',radius:18},
   paper:  {name:'Papier (clair)',gold:'#92400e',violet:'#7c2d12',bg:'#fef3c7',surface:'#fde68a',text:'#1c1917',textDim:'#57534e',bgStyle:'solid',font:'serif',radius:6},
+  retro:  {name:'Logiciel rétro',gold:'#000080',violet:'#808080',bg:'#c0c0c0',surface:'#d4d0c8',text:'#000000',textDim:'#404040',bgStyle:'solid',font:'system',radius:0},
 };
 const FONT_FAMILIES={
   default:"'Exo 2',system-ui,sans-serif",
   modern:"'Inter','Segoe UI',system-ui,sans-serif",
   serif:"'Cinzel','Playfair Display',serif",
   mono:"'JetBrains Mono','Fira Code',monospace",
+  system:"'MS Sans Serif','Tahoma','Verdana','Geneva',sans-serif",
 };
 
 function _currentTheme(){return STATE.config.theme||{...THEME_PRESETS.default}}
@@ -4615,6 +4649,9 @@ function applyTheme(t){
   if(t.bgStyle==='image'&&t.bgImage){
     body.style.setProperty('--bg-image','url('+JSON.stringify(t.bgImage)+')');
   } else body.style.removeProperty('--bg-image');
+  /* Style spécial 'rétro Windows 95' déclenché par police system + bg gris */
+  const isRetro=t.font==='system'&&t.bg&&t.bg.toLowerCase()==='#c0c0c0';
+  body.classList.toggle('theme-retro',!!isRetro);
 }
 
 function _hexToRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
