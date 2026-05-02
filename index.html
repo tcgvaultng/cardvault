@@ -298,6 +298,11 @@ img.err-hide{visibility:hidden}
             <option value="ja">🇯🇵 Japonais</option>
           </select>
         </div>
+        <div class="row" style="gap:6px;margin-bottom:8px">
+          <select id="scanSet" style="flex:1" disabled>
+            <option value="auto">📁 Toutes extensions</option>
+          </select>
+        </div>
         <div class="cam-wrap hidden" id="camWrap">
           <video id="camVideo" autoplay playsinline muted></video>
           <canvas id="camCanvas"></canvas>
@@ -2892,6 +2897,7 @@ function findNearestPhash(queryHex,opts){
   const topN=o.topN||10;
   const games=o.games||null;
   const langs=o.langs||null;
+  const sets=o.sets||null; /* array de set codes lowercase, ou null */
   const db=_phashDB;
   if(!db)throw new Error('phash DB not loaded');
   const qb=new Uint8Array(8);
@@ -2913,6 +2919,16 @@ function findNearestPhash(queryHex,opts){
       const l=k.split('|',2)[1];
       if(langs.indexOf(l)>=0)indices=indices.concat(db.gameLangIdx[k]);
     }
+  }
+  /* Filtre par set codes (sur cardId before "-") */
+  if(sets&&sets.length){
+    const setSet=new Set(sets.map(s=>s.toLowerCase()));
+    const baseIndices=indices||Array.from({length:keys.length},(_,i)=>i);
+    indices=baseIndices.filter(i=>{
+      const cardId=keys[i].split('|',3)[2]||'';
+      const sc=cardId.split('-',1)[0].toLowerCase();
+      return setSet.has(sc);
+    });
   }
   const total=indices?indices.length:keys.length;
   const best=[];
@@ -3276,12 +3292,14 @@ async function captureCardOffline(){
         geminiPromise=geminiIdentify(b64).catch(e=>{console.warn('Gemini failed:',e.message);return null});
       }catch(_){}
     }
-    /* 5) Filtres jeu/langue */
+    /* 5) Filtres jeu/langue/extension */
     const scanGame=document.getElementById('scanGame')?.value||'auto';
     const scanLang=document.getElementById('scanLang')?.value||'auto';
+    const scanSet=document.getElementById('scanSet')?.value||'auto';
     const opts={topN:25};
     if(scanGame!=='auto')opts.games=[scanGame];
     if(scanLang!=='auto')opts.langs=[scanLang];
+    if(scanSet!=='auto')opts.sets=[scanSet];
     const t0=performance.now();
     /* Essaie chaque crop, garde le meilleur */
     let matches=null,bestVariantIdx=0,queryHex='';
@@ -3298,6 +3316,19 @@ async function captureCardOffline(){
     if(scanGame!=='auto'&&scanLang!=='auto')filteredSize=(_phashDB.gameLangIdx[scanGame+'|'+scanLang]||[]).length;
     else if(scanGame!=='auto')filteredSize=_phashDB.gameIdx[scanGame].length;
     else if(scanLang!=='auto'){filteredSize=0;for(const k in _phashDB.gameLangIdx)if(k.split('|',2)[1]===scanLang)filteredSize+=_phashDB.gameLangIdx[k].length;}
+    if(scanSet!=='auto'){
+      /* Recompte uniquement les cartes du set sélectionné */
+      let n=0;
+      for(let i=0;i<_phashDB.keys.length;i++){
+        const k=_phashDB.keys[i];
+        const parts=k.split('|',3);
+        if(scanGame!=='auto'&&parts[0]!==scanGame)continue;
+        if(scanLang!=='auto'&&parts[1]!==scanLang)continue;
+        const sc=(parts[2]||'').split('-',1)[0].toLowerCase();
+        if(sc===scanSet)n++;
+      }
+      filteredSize=n;
+    }
     if(!matches.length){
       box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Aucune correspondance</h3><p class="muted">DB pas chargée ou jeu vide.</p></div>';
       return;
@@ -3487,6 +3518,8 @@ async function startCamera(){
     if(ai)ai.disabled=false;
     /* Pre-charge la base pHash en tache de fond */
     loadPhashDB().catch(e=>console.warn('phash preload',e.message));
+    /* Rafraîchit la liste des extensions au cas où le manifest a changé */
+    _refreshScanSets().catch(()=>{});
   }catch(e){toast('Accès caméra refusé: '+e.message,'err')}
 }
 
@@ -3538,6 +3571,56 @@ async function captureCard(){
   }catch(e){
     box.innerHTML='<div class="empty"><div class="ic">⚠️</div><h3>Erreur Gemini</h3><p class="muted">'+esc(e.message)+'</p></div>';
   }
+}
+
+/* Peuple le dropdown scanSet selon scanGame + scanLang sélectionnés.
+   Désactivé si jeu = auto. Listes les sets de la library avec leur nom + count. */
+async function _refreshScanSets(){
+  const sel=document.getElementById('scanSet');
+  if(!sel)return;
+  const game=document.getElementById('scanGame')?.value||'auto';
+  const lang=document.getElementById('scanLang')?.value||'auto';
+  const cur=sel.value;
+  sel.innerHTML='<option value="auto">📁 Toutes extensions</option>';
+  if(game==='auto'){sel.disabled=true;return}
+  sel.disabled=false;
+  await loadLibraryManifest();
+  if(!_libManifest||!_libManifest.cards)return;
+  const setsMap=new Map();
+  for(const k in _libManifest.cards){
+    const parts=k.split('|',3);
+    if(parts.length!==3)continue;
+    if(parts[0]!==game)continue;
+    if(lang!=='auto'&&parts[1]!==lang)continue;
+    const e=_libManifest.cards[k];
+    if(typeof e!=='object')continue;
+    const sc=(e.s||parts[2].split('-')[0]||'').toLowerCase();
+    if(!sc)continue;
+    if(!setsMap.has(sc))setsMap.set(sc,{code:sc,name:e.sn||sc.toUpperCase(),count:0});
+    setsMap.get(sc).count++;
+    if(e.sn)setsMap.get(sc).name=e.sn;
+  }
+  /* Enrichit avec date de sortie pour tri */
+  const setsMeta=_libManifest.sets||{};
+  const arr=Array.from(setsMap.values());
+  for(const s of arr){
+    const meta=setsMeta[game+'|'+lang+'|'+s.code]||setsMeta[game+'|en|'+s.code]||{};
+    s.releaseDate=meta.releaseDate||'';
+    s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:9999;
+  }
+  /* Tri : du plus récent au plus ancien (orderIndex asc, releaseDate desc) */
+  arr.sort((a,b)=>{
+    if(a.orderIndex!==b.orderIndex)return a.orderIndex-b.orderIndex;
+    return (b.releaseDate||'').localeCompare(a.releaseDate||'');
+  });
+  for(const s of arr){
+    const opt=document.createElement('option');
+    opt.value=s.code;
+    opt.textContent=s.name+' ('+s.code.toUpperCase()+', '+s.count+')';
+    sel.appendChild(opt);
+  }
+  /* Restaure la sélection si toujours présente */
+  if(cur&&Array.from(sel.options).some(o=>o.value===cur))sel.value=cur;
 }
 
 /* ==================== BROWSE (parcourir les extensions de la library) ==================== */
@@ -3994,6 +4077,8 @@ document.getElementById('tabbar').addEventListener('click',e=>{
 document.getElementById('btnStartCam').addEventListener('click',startCamera);
 document.getElementById('btnCapture').addEventListener('click',captureCardOffline);
 document.getElementById('btnCaptureAI').addEventListener('click',captureCard);
+document.getElementById('scanGame').addEventListener('change',_refreshScanSets);
+document.getElementById('scanLang').addEventListener('change',_refreshScanSets);
 document.getElementById('filterCards').addEventListener('input',renderAllCards);
 ['searchName','searchSet','searchNumber'].forEach(id=>{
   const el=document.getElementById(id);
