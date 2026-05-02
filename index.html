@@ -3201,9 +3201,26 @@ async function captureCardOffline(){
     let workCanvas=canvas;
     const didRectify=false; /* OpenCV désactivé sur iOS (trop lourd) */
     setStep(smartMode?'🔬 Analyse pHash + OCR (1er scan ~5 MB)…':'🔬 Calcul pHash…');
-    const queryHex=computePhash(workCanvas);
+    /* Multi-crop : essaie 3 versions (overlay full, centre 90%, centre 80%)
+       et garde celle qui donne la meilleure distance pHash. Robuste si la
+       carte n'est pas parfaitement alignée dans l'overlay. */
+    const cropVariants=[
+      [0,0,1,1],
+      [0.05,0.05,0.9,0.9],
+      [0.1,0.1,0.8,0.8],
+    ];
+    const variantCanvases=cropVariants.map(([rx,ry,rw,rh])=>{
+      const c=document.createElement('canvas');
+      c.width=Math.round(workCanvas.width*rw);
+      c.height=Math.round(workCanvas.height*rh);
+      c.getContext('2d').drawImage(workCanvas,
+        Math.round(workCanvas.width*rx),Math.round(workCanvas.height*ry),
+        c.width,c.height,0,0,c.width,c.height);
+      return c;
+    });
     let ocrPromise=null;
     if(smartMode){
+      /* OCR sur la version full overlay (le plus de contexte pour le numéro) */
       ocrPromise=ocrCardBottom(workCanvas).catch(e=>{console.warn('OCR failed:',e);return ''});
     }
     /* 5) Filtres jeu/langue */
@@ -3213,8 +3230,17 @@ async function captureCardOffline(){
     if(scanGame!=='auto')opts.games=[scanGame];
     if(scanLang!=='auto')opts.langs=[scanLang];
     const t0=performance.now();
-    let matches=findNearestPhash(queryHex,opts);
+    /* Essaie chaque crop, garde le meilleur */
+    let matches=null,bestVariantIdx=0,queryHex='';
+    for(let vi=0;vi<variantCanvases.length;vi++){
+      const hex=computePhash(variantCanvases[vi]);
+      const m=findNearestPhash(hex,opts);
+      if(m.length&&(!matches||m[0].distance<matches[0].distance)){
+        matches=m;bestVariantIdx=vi;queryHex=hex;
+      }
+    }
     const phashDt=Math.round(performance.now()-t0);
+    if(bestVariantIdx>0)workCanvas=variantCanvases[bestVariantIdx]; /* preview du crop choisi */
     let filteredSize=_phashDB.size;
     if(scanGame!=='auto'&&scanLang!=='auto')filteredSize=(_phashDB.gameLangIdx[scanGame+'|'+scanLang]||[]).length;
     else if(scanGame!=='auto')filteredSize=_phashDB.gameIdx[scanGame].length;
