@@ -3372,7 +3372,10 @@ async function captureCardOffline(){
       const game=resolved.game;
       const cardId=resolved.cardId;
       const entry=resolved.entry;
-      const c={id:uid(),game,name:cardId,set:'',number:'',image:'',price:null,_noPrice:true,_phashKey:m.key,_phashDist:m.distance};
+      /* Détermine la langue de la carte : la clé résolue (manifest) en premier,
+         sinon la lang du pHash key, sinon la lang demandée par l'utilisateur */
+      const cardLang=resolved.key?resolved.key.split('|',2)[1]:m.key.split('|',2)[1]||lang;
+      const c={id:uid(),game,name:cardId,set:'',number:'',image:'',price:null,_noPrice:true,_phashKey:m.key,_phashDist:m.distance,lang:cardLang};
       if(entry){
         c.image=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
         if(entry.n)c.name=entry.n;
@@ -3400,7 +3403,7 @@ async function captureCardOffline(){
       }
     }catch(_){}
     _scanCache=cards.slice();
-    const manual={id:uid(),name:'Saisie manuelle',game:cards[0].game,set:'',image:'',price:null,_noPrice:true};
+    const manual={id:uid(),name:'Saisie manuelle',game:cards[0].game,set:'',image:'',price:null,_noPrice:true,lang:lang};
     _scanCache.push(manual);
     const manualIdx=_scanCache.length-1;
     /* Preview de la zone scannée (rectifiée si OpenCV) */
