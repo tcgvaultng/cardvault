@@ -273,8 +273,9 @@ img.err-hide{visibility:hidden}
       <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Ajouter une carte</h2>
       <div class="panel">
         <div class="panel-title">📥 Upload manuel (scan + infos)</div>
-        <div class="muted mb-10">Ajoute une carte que les API ne connaissent pas (variantes, regional promos, scan perso). Image upload R2.</div>
-        <button class="btn btn-violet btn-block" data-act="openManualAdd">📷 Ouvrir le formulaire</button>
+        <div class="muted mb-10">Ajoute une carte que les API ne connaissent pas (variantes, regional promos, scan perso). Recto + verso possibles.</div>
+        <button class="btn btn-violet btn-block" data-act="openManualAdd">📷 Ajouter une carte manuelle</button>
+        <button class="btn btn-ghost btn-block mt-10" data-act="openManualList">📋 Voir/modifier mes ajouts manuels</button>
       </div>
       <div class="panel">
         <div class="panel-title">📷 Scanner IA (Gemini)</div>
@@ -780,8 +781,10 @@ function openManualAdd(){
   }
   const u=getUser();if(!u)return;
   const gameOpts=Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('');
-  openModal('📷 Ajouter une carte manuellement',
-    '<div class="field"><label>Image de la carte</label><input id="ma_file" type="file" accept="image/*"></div>'
+  const editing=arguments[0]||null;
+  openModal((editing?'✏️ Modifier':'📷 Ajouter')+' une carte manuelle',
+    '<div class="field"><label>Image RECTO '+(editing?'(laisse vide pour garder)':'')+'</label><input id="ma_file" type="file" accept="image/*"></div>'
+    +'<div class="field"><label>Image VERSO (optionnel, pour cartes double-face)</label><input id="ma_file_back" type="file" accept="image/*"></div>'
     +'<div class="row"><div class="field"><label>Jeu</label><select id="ma_game">'+gameOpts+'</select></div>'
     +'<div class="field"><label>Langue</label><select id="ma_lang"></select></div></div>'
     +'<div class="row"><div class="field"><label>Code extension</label><input id="ma_setcode" placeholder="ex inr, swsh1, OP15"></div>'
@@ -790,7 +793,7 @@ function openManualAdd(){
     +'<div class="field"><label>Nom de la carte</label><input id="ma_name" placeholder="ex Gardien de la lignée"></div>'
     +'<div class="field"><label>Prix (€) optionnel</label><input id="ma_price" type="number" step="0.01" placeholder="0.00"></div>'
     +'<div id="ma_status" class="hint mt-10"></div>'
-    +'<button class="btn btn-primary btn-block mt-10" id="ma_submit">📤 Uploader & ajouter à ma collection</button>',
+    +'<button class="btn btn-primary btn-block mt-10" id="ma_submit">'+(editing?'💾 Mettre à jour':'📤 Uploader & ajouter')+'</button>',
     ()=>{
       const gameSel=document.getElementById('ma_game');
       const langSel=document.getElementById('ma_lang');
@@ -799,44 +802,114 @@ function openManualAdd(){
         langSel.innerHTML=langs.map(k=>'<option value="'+k+'">'+(LANGS[k]?.label||k)+'</option>').join('');
       };
       gameSel.addEventListener('change',refresh);refresh();
+      /* Pre-remplir si edit */
+      if(editing){
+        gameSel.value=editing.game||'pokemon';refresh();
+        langSel.value=editing.lang||'en';
+        document.getElementById('ma_setcode').value=editing.setCode||'';
+        document.getElementById('ma_number').value=editing.number||'';
+        document.getElementById('ma_setname').value=editing.set||'';
+        document.getElementById('ma_name').value=editing.name||'';
+        if(editing.price!=null)document.getElementById('ma_price').value=editing.price;
+      }
       document.getElementById('ma_submit').addEventListener('click',async()=>{
         const file=document.getElementById('ma_file').files?.[0];
+        const fileBack=document.getElementById('ma_file_back').files?.[0];
         const game=gameSel.value;const lang=langSel.value;
         const sc=document.getElementById('ma_setcode').value.trim().toLowerCase();
         const num=document.getElementById('ma_number').value.trim();
         const setName=document.getElementById('ma_setname').value.trim();
         const cardName=document.getElementById('ma_name').value.trim();
-        const price=parseFloat(document.getElementById('ma_price').value)||null;
+        const price=parseFloat(document.getElementById('ma_price').value);
         const status=document.getElementById('ma_status');
-        if(!file||!game||!lang||!sc||!num||!cardName){status.textContent='⚠️ Remplis tous les champs requis';status.style.color='var(--red)';return}
+        if(!game||!lang||!sc||!num||!cardName){status.textContent='⚠️ Remplis tous les champs requis';status.style.color='var(--red)';return}
+        if(!editing&&!file){status.textContent='⚠️ Image recto requise';status.style.color='var(--red)';return}
         try{
           status.style.color='var(--text-dim)';
-          status.textContent='Compression…';
-          const blob=await compressImageWebp(file);
           const cardId=sc+'-'+num;
-          const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
-          status.textContent='Upload R2 ('+(blob.size/1024).toFixed(0)+' KB)…';
-          await r2PutObject(key,blob,'image/webp');
-          const publicUrl=(cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev')+'/'+key.split('/').map(encodeURIComponent).join('/');
-          /* Choix collection */
-          if(!u.collections||u.collections.length===0){
-            if(!confirm('Aucune collection. Créer "Principale" ?'))return;
-            u.collections.push({id:uid(),name:'Principale',color:'#c9a04b',createdAt:Date.now()});
+          const baseUrl=cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev';
+          let imageUrl=editing?editing.image:'';
+          let backUrl=editing?editing.imageBack||'':'';
+          if(file){
+            status.textContent='Compression recto…';
+            const blob=await compressImageWebp(file);
+            const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
+            status.textContent='Upload recto ('+(blob.size/1024).toFixed(0)+' KB)…';
+            await r2PutObject(key,blob,'image/webp');
+            imageUrl=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
           }
-          const cid=u.collections[0].id;
-          const now=Date.now();
-          const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
-          const newCard={id:uid(),collectionId:cid,name:cardName,printedName:cardName,
-            game,set:setName||sc.toUpperCase(),setCode:sc,number:num,
-            image:publicUrl,price,quantity:1,lang,addedAt:now,updatedAt:now};
-          newCard[idField]=cardId;
-          u.cards=u.cards||[];u.cards.push(newCard);
-          touchActiveUser();saveLocal();scheduleSync();
-          toast('Carte ajoutée ✓','ok');
+          if(fileBack){
+            status.textContent='Compression verso…';
+            const blob2=await compressImageWebp(fileBack);
+            const key2=game+'/'+lang+'/_personal/'+cardId+'_back.webp';
+            status.textContent='Upload verso ('+(blob2.size/1024).toFixed(0)+' KB)…';
+            await r2PutObject(key2,blob2,'image/webp');
+            backUrl=baseUrl+'/'+key2.split('/').map(encodeURIComponent).join('/');
+          }
+          if(editing){
+            /* Mise a jour */
+            editing.name=cardName;editing.printedName=cardName;
+            editing.game=game;editing.lang=lang;
+            editing.setCode=sc;editing.number=num;
+            editing.set=setName||sc.toUpperCase();
+            editing.image=imageUrl;
+            if(backUrl)editing.imageBack=backUrl;
+            if(!isNaN(price))editing.price=price;
+            const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
+            editing[idField]=cardId;
+            editing.updatedAt=Date.now();
+            touchCard(editing);saveLocal();scheduleSync();
+            toast('Carte mise à jour ✓','ok');
+          } else {
+            if(!u.collections||u.collections.length===0){
+              if(!confirm('Aucune collection. Créer "Principale" ?'))return;
+              u.collections.push({id:uid(),name:'Principale',color:'#c9a04b',createdAt:Date.now()});
+            }
+            const cid=u.collections[0].id;
+            const now=Date.now();
+            const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
+            const newCard={id:uid(),collectionId:cid,name:cardName,printedName:cardName,
+              game,set:setName||sc.toUpperCase(),setCode:sc,number:num,
+              image:imageUrl,imageBack:backUrl||undefined,
+              price:isNaN(price)?null:price,quantity:1,lang,addedAt:now,updatedAt:now,
+              _manual:true};
+            newCard[idField]=cardId;
+            u.cards=u.cards||[];u.cards.push(newCard);
+            touchActiveUser();saveLocal();scheduleSync();
+            toast('Carte ajoutée ✓','ok');
+          }
           closeModal();renderCollections();renderAllCards();
         }catch(e){status.textContent='❌ '+e.message;status.style.color='var(--red)';console.error(e)}
       });
     });
+}
+
+/* Liste les cartes ajoutees manuellement (filtre _manual=true ou image contient /_personal/) */
+function openManualList(){
+  const u=getUser();
+  if(!u||!u.cards||u.cards.length===0){toast('Aucune carte','err');return}
+  const manuals=u.cards.filter(c=>c._manual||(c.image&&c.image.includes('/_personal/')));
+  if(manuals.length===0){
+    openModal('📷 Mes ajouts manuels','<div class="empty"><div class="ic">📷</div><h3>Aucune carte ajoutée manuellement</h3><p class="muted">Utilise <b>Ajouter → Upload manuel</b> pour en créer.</p></div>');
+    return;
+  }
+  manuals.sort((a,b)=>(b.updatedAt||b.addedAt||0)-(a.updatedAt||a.addedAt||0));
+  openModal('📷 Mes ajouts manuels ('+manuals.length+')',
+    manuals.map(c=>{
+      return '<div class="card-row" data-act="editManualCard" data-args="'+esc(JSON.stringify([c.id]))+'">'
+        +imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
+        +'<div class="sub">'+esc((GAMES[c.game]?.icon||'')+' '+(c.set||'')+' • #'+(c.number||''))+(c.imageBack?' • R/V':'')+'</div></div>'
+        +'<div class="price">'+fmtEur(c.price)+'</div></div>';
+    }).join('')
+  );
+}
+
+function editManualCard(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);
+  if(!c)return;
+  closeModal();
+  openManualAdd(c);
 }
 
 /* Resout l'ID utilise dans le manifest selon le jeu */
@@ -1594,8 +1667,8 @@ function openCardDetail(cardId){
   if(!c)return;
   const g=GAMES[c.game]||{name:c.game};
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
-  /* Verso si carte double-face */
-  const backUrl=libraryBackUrlFor(c.game,c.lang,_libCardIdFor(c));
+  /* Verso si carte double-face : prefere c.imageBack (upload manuel), sinon library */
+  const backUrl=c.imageBack||libraryBackUrlFor(c.game,c.lang,_libCardIdFor(c));
   openModal('Détails de la carte',
     '<div class="card-detail">'
     +'<div id="cardImgWrap" data-front="'+esc(c.image||'')+'" data-back="'+esc(backUrl||'')+'" data-side="front">'
@@ -2866,7 +2939,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
+  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,
   switchView
 });
