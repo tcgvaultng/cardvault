@@ -851,6 +851,7 @@ let _searchCache=[];
 let _scanCache=[];
 let _gameFilter='all';
 let _syncTimer=null;
+let _currentOpenCollection=null;
 
 /* ==================== UTILS ==================== */
 /* IndexedDB — couche de persistance de secours (resiste mieux aux purges navigateur) */
@@ -1756,6 +1757,8 @@ function tryParseSetupUrl(){
 
 /* ==================== TABS ==================== */
 function switchView(name){
+  /* Reset le tracker de collection ouverte (le modal est fermé en changeant de vue) */
+  _currentOpenCollection=null;
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
   const v=document.getElementById('view-'+name);
@@ -2208,6 +2211,7 @@ function openCollection(cid){
   const u=getUser();
   const coll=u.collections.find(c=>c.id===cid);
   if(!coll)return;
+  _currentOpenCollection=cid;
   const cards=(u.cards||[]).filter(c=>c.collectionId===cid);
   const total=cards.reduce((s,x)=>s+(x.quantity||1),0);
   const val=cards.reduce((s,x)=>s+(x.price||0)*(x.quantity||1),0);
@@ -2735,14 +2739,26 @@ function _openMoveModal(ids){
 
 function confirmMove(targetId,ids){
   const u=getUser();if(!u)return;
+  /* Mémorise la collection source pour réouvrir après le move */
+  const sourceCollectionId=_currentOpenCollection;
   let n=0;
+  const targetColl=(u.collections||[]).find(c=>c.id===targetId);
   for(const id of ids){
     const c=(u.cards||[]).find(x=>x.id===id);
     if(c&&c.collectionId!==targetId){c.collectionId=targetId;touchCard(c);n++}
   }
   if(_cardsSelection&&_cardsSelection.has)_cardsSelection.clear();
-  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
-  toast(n+' carte(s) déplacée(s) ✓','ok');
+  saveLocal();scheduleSync();
+  closeModal();
+  renderCollections();renderAllCards();
+  /* Si l'utilisateur était dans la collection source, on la rouvre pour qu'il
+     voie que la carte n'y est plus. Sinon on ferme juste la modal. */
+  if(sourceCollectionId&&sourceCollectionId!==targetId){
+    setTimeout(()=>openCollection(sourceCollectionId),50);
+  } else {
+    _currentOpenCollection=null;
+  }
+  toast(n+' carte(s) déplacée(s) → '+esc(targetColl?.name||'…')+' ✓','ok');
 }
 
 function bulkExport(){
