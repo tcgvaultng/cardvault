@@ -2348,18 +2348,24 @@ function renderBrowse(){
     s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
     if(meta.name&&!s.namedFromManifest)s.name=meta.name;
   }
-  /* Compte les cartes possedees par setCode (cross-langue: peu importe la langue
-     de la carte, on compte si elle est du meme set+numero). Permet par exemple
-     de voir la progression d'un set FR meme si tu as les cartes en EN. */
+  /* Normalise un setCode pour matcher entre APIs (pokemontcg.io vs TCGdex).
+     Ex: "sv03.5" et "sv3pt5" et "sv3.5" -> tous "sv35" */
+  const normSc=s=>{
+    if(!s)return '';
+    let r=String(s).toLowerCase().replace(/pt/g,'.').replace(/[\-_]/g,'');
+    r=r.replace(/(\d+)/g,n=>parseInt(n,10).toString());
+    r=r.replace(/\./g,'');
+    return r;
+  };
+  /* Compte les cartes possedees par setCode normalise (cross-langue + cross-API) */
   const u=getUser();
-  const ownedBySet=new Map();   /* lang-specific */
-  const ownedAnyLang=new Map(); /* toutes langues */
+  const ownedBySet=new Map();
+  const ownedAnyLang=new Map();
   if(u&&u.cards){
     for(const c of u.cards){
       if(c.game!==game)continue;
       let sc=(c.setCode||'').toLowerCase();
       let num=String(c.number||'').replace(/^0+/,'').toLowerCase();
-      /* Fallback : derive setCode/number du _pokeId si manquant */
       if((!sc||!num)&&_libCardIdFor(c)){
         const m=String(_libCardIdFor(c)).match(/^(.+)-([A-Za-z0-9_]+)$/);
         if(m){
@@ -2368,19 +2374,21 @@ function renderBrowse(){
         }
       }
       if(!sc||!num)continue;
-      if(!ownedAnyLang.has(sc))ownedAnyLang.set(sc,new Set());
-      ownedAnyLang.get(sc).add(num);
+      const nsc=normSc(sc);
+      if(!ownedAnyLang.has(nsc))ownedAnyLang.set(nsc,new Set());
+      ownedAnyLang.get(nsc).add(num);
       if((c.lang||'en')===lang){
-        if(!ownedBySet.has(sc))ownedBySet.set(sc,new Set());
-        ownedBySet.get(sc).add(num);
+        if(!ownedBySet.has(nsc))ownedBySet.set(nsc,new Set());
+        ownedBySet.get(nsc).add(num);
       }
     }
   }
   for(const s of sets.values()){
-    const langOwned=(ownedBySet.get(s.code)||new Set()).size;
-    const anyOwned=(ownedAnyLang.get(s.code)||new Set()).size;
-    s.owned=anyOwned;            /* cross-langue: total possedees */
-    s.ownedInLang=langOwned;     /* dans la langue selectionnee */
+    const nsc=normSc(s.code);
+    const langOwned=(ownedBySet.get(nsc)||new Set()).size;
+    const anyOwned=(ownedAnyLang.get(nsc)||new Set()).size;
+    s.owned=anyOwned;
+    s.ownedInLang=langOwned;
     s.pct=s.count>0?Math.round(s.owned*100/s.count):0;
     if(s.pct>100)s.pct=100;
   }
