@@ -365,6 +365,12 @@ img.err-hide{visibility:hidden}
         <div id="cfgSyncStatus" class="hint mt-10"></div>
       </div>
       <div class="panel">
+        <div class="panel-title">📚 Library Pokémon</div>
+        <div class="muted">~51 000 cartes haute-rés partagées via R2.</div>
+        <button class="btn btn-violet btn-block mt-10" data-act="refreshLibraryAndCollection">🔄 Mettre à jour les visuels de ma collection</button>
+        <div class="hint mt-10">Refetch le manifest et applique les dernières images / noms de set à toutes les cartes Pokémon de ta collection.</div>
+      </div>
+      <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
         <div class="field">
           <label>API Key Gemini</label>
@@ -514,30 +520,58 @@ let _libManifest=null;
 let _libManifestPromise=null;
 
 const LIBRARY_MIN_VERSION=2;
+let _lastCollectionRefreshAt=0;
 async function loadLibraryManifest(){
   if(_libManifest)return _libManifest;
   if(_libManifestPromise)return _libManifestPromise;
   _libManifestPromise=(async()=>{
+    let manifest=null;
     /* Cache IndexedDB (invalide les versions trop anciennes) */
     try{
       const cached=await idbGet('library_manifest');
       if(cached&&(cached.version||0)>=LIBRARY_MIN_VERSION&&cached._cachedAt&&(Date.now()-cached._cachedAt)<LIBRARY_TTL_MS){
-        _libManifest=cached;return cached;
+        manifest=cached;
       }
     }catch(_){}
-    /* Fetch reseau */
-    try{
-      const r=await fetch(LIBRARY_MANIFEST_URL,{cache:'no-cache'});
-      if(!r.ok)return null;
-      const m=await r.json();
-      m._cachedAt=Date.now();
-      _libManifest=m;
-      idbSet('library_manifest',m);
-      return m;
-    }catch(e){console.warn('library manifest fetch failed',e);return null}
-    finally{_libManifestPromise=null}
+    /* Fetch reseau si pas de cache valide */
+    if(!manifest){
+      try{
+        const r=await fetch(LIBRARY_MANIFEST_URL,{cache:'no-cache'});
+        if(r.ok){
+          manifest=await r.json();
+          manifest._cachedAt=Date.now();
+          idbSet('library_manifest',manifest);
+        }
+      }catch(e){console.warn('library manifest fetch failed',e)}
+    }
+    _libManifest=manifest;
+    /* Auto-refresh collection avec les nouvelles donnees */
+    if(manifest&&manifest._cachedAt&&manifest._cachedAt>_lastCollectionRefreshAt){
+      _lastCollectionRefreshAt=manifest._cachedAt;
+      try{
+        const r=refreshCollectionFromLibrary();
+        if(r.touched>0)console.log('[library] '+r.touched+' cartes mises a jour');
+      }catch(e){console.warn('refreshCollectionFromLibrary failed',e)}
+    }
+    _libManifestPromise=null;
+    return manifest;
   })();
   return _libManifestPromise;
+}
+
+/* Force un refresh manuel : invalide le cache, refetch, applique a la collection */
+async function refreshLibraryAndCollection(){
+  try{
+    showLoader('Mise à jour de la library…');
+    /* Invalide cache IDB */
+    await idbSet('library_manifest',null);
+    _libManifest=null;_libManifestPromise=null;_lastCollectionRefreshAt=0;
+    await loadLibraryManifest();
+    if(!_libManifest){toast('Manifest indisponible','err');return}
+    const r=refreshCollectionFromLibrary();
+    toast(r.touched+' / '+r.total+' cartes mises à jour','ok');
+  }catch(e){toast('Erreur: '+e.message,'err')}
+  finally{hideLoader()}
 }
 
 function _libEntryPath(entry){
@@ -558,6 +592,54 @@ function libraryUrlFor(lang,cardId){
   const path=_libEntryPath(entry);
   if(!path)return null;
   return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
+}
+
+/* Rafraichit la collection : pour chaque carte Pokemon, remet a jour image (R2),
+   set name, setCode, number depuis le manifest. A appeler quand le manifest est
+   charge ou refresh. Retourne {touched: nb de cartes modifiees}. */
+function refreshCollectionFromLibrary(){
+  if(!_libManifest)return {touched:0,total:0};
+  const u=getUser();
+  if(!u||!Array.isArray(u.cards))return {touched:0,total:0};
+  let touched=0;
+  for(const c of u.cards){
+    if(c.game!=='pokemon')continue;
+    /* Identifie le pokeId */
+    let pokeId=c._pokeId;
+    if(!pokeId&&c.setCode&&c.number)pokeId=c.setCode+'-'+c.number;
+    if(!pokeId)continue;
+    /* Derive setCode/number si manquant */
+    if(!c.setCode||!c.number){
+      const m=String(pokeId).match(/^(.+)-([A-Za-z0-9_]+)$/);
+      if(m){
+        if(!c.setCode){c.setCode=m[1];touched++}
+        if(!c.number){c.number=m[2];touched++}
+      }
+    }
+    /* Library enrichment */
+    const entry=_libEntryFor(c.lang||'en',pokeId);
+    if(entry&&typeof entry==='object'){
+      let changed=false;
+      if(entry.p){
+        const newUrl=_libManifest.url_base+'/'+entry.p.split('/').map(encodeURIComponent).join('/');
+        if(c.image!==newUrl){c.image=newUrl;changed=true}
+      }
+      if(entry.sn&&c.set!==entry.sn){c.set=entry.sn;changed=true}
+      if(entry.s&&c.setCode!==entry.s){c.setCode=entry.s;changed=true}
+      if(entry.no&&c.number!==entry.no){c.number=entry.no;changed=true}
+      if(!c._pokeId){c._pokeId=pokeId;changed=true}
+      if(changed){c.updatedAt=Date.now();touched++}
+    }
+  }
+  if(touched){
+    touchActiveUser();
+    saveLocal();
+    scheduleSync();
+    /* Rendu si on est sur une vue affichant des cartes */
+    try{renderCollections()}catch(_){}
+    try{renderAllCards()}catch(_){}
+  }
+  return {touched,total:u.cards.length};
 }
 
 /* Enrichit les cartes Pokemon avec image R2 + nom de set/setCode/numero depuis le manifest */
@@ -2201,7 +2283,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,
+  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,
   switchView
 });
 
