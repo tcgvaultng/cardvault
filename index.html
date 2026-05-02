@@ -678,6 +678,7 @@ function refreshCollectionFromLibrary(){
   const u=getUser();
   if(!u||!Array.isArray(u.cards))return {touched:0,total:0};
   let touched=0;
+  const isBlank=v=>!v||v==='undefined'||v==='null';
   /* Helper local pour parser un cardId depuis l'URL d'image */
   const cardIdFromImg=url=>{
     if(!url)return '';
@@ -685,10 +686,17 @@ function refreshCollectionFromLibrary(){
     return m?decodeURIComponent(m[1]):'';
   };
   for(const c of u.cards){
+    /* Nettoie les valeurs string 'undefined' qui polluent */
+    if(isBlank(c.setCode)){c.setCode='';touched++}
+    if(isBlank(c.number)){c.number='';touched++}
+    if(isBlank(c._pokeId))delete c._pokeId;
+    if(isBlank(c._mtgId))delete c._mtgId;
+    if(isBlank(c._opId))delete c._opId;
+    if(isBlank(c._ygoId))delete c._ygoId;
     let cardId=_libCardIdFor(c);
-    if(!cardId&&c.setCode&&c.number)cardId=c.setCode+'-'+c.number;
-    if(!cardId)cardId=cardIdFromImg(c.image);
-    if(!cardId)continue;
+    if(isBlank(cardId)&&c.setCode&&c.number)cardId=c.setCode+'-'+c.number;
+    if(isBlank(cardId))cardId=cardIdFromImg(c.image);
+    if(isBlank(cardId))continue;
     /* Derive setCode/number si manquant */
     if(!c.setCode||!c.number){
       const m=String(cardId).match(/^(.+)-([A-Za-z0-9_]+)$/);
@@ -2629,13 +2637,16 @@ function renderBrowse(){
   const u=getUser();
   const ownedAnyLang=new Map(); /* nsc -> Set(num) */
   const ownedBySet=new Map();   /* nsc -> Set(num) restricted to current lang */
+  /* Helper : 'undefined'/'null' string + valeur vide -> blank */
+  const isBlank=v=>!v||v==='undefined'||v==='null';
   if(u&&u.cards){
     for(const c of u.cards){
       if(c.game!==game)continue;
-      let sc=(c.setCode||'').toLowerCase();
-      let num=String(c.number||'').replace(/^0+/,'').toLowerCase();
-      if((!sc||!num)&&_libCardIdFor(c)){
-        const m=String(_libCardIdFor(c)).match(/^(.+)-([A-Za-z0-9_]+)$/);
+      let sc=isBlank(c.setCode)?'':String(c.setCode).toLowerCase();
+      let num=isBlank(c.number)?'':String(c.number).replace(/^0+/,'').toLowerCase();
+      const cid=_libCardIdFor(c);
+      if((!sc||!num)&&!isBlank(cid)){
+        const m=String(cid).match(/^(.+)-([A-Za-z0-9_]+)$/);
         if(m){
           if(!sc)sc=m[1].toLowerCase();
           if(!num)num=m[2].replace(/^0+/,'').toLowerCase();
