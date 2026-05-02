@@ -513,14 +513,15 @@ const LIBRARY_TTL_MS=24*3600*1000; // 24h cache
 let _libManifest=null;
 let _libManifestPromise=null;
 
+const LIBRARY_MIN_VERSION=2;
 async function loadLibraryManifest(){
   if(_libManifest)return _libManifest;
   if(_libManifestPromise)return _libManifestPromise;
   _libManifestPromise=(async()=>{
-    /* Cache IndexedDB */
+    /* Cache IndexedDB (invalide les versions trop anciennes) */
     try{
       const cached=await idbGet('library_manifest');
-      if(cached&&cached._cachedAt&&(Date.now()-cached._cachedAt)<LIBRARY_TTL_MS){
+      if(cached&&(cached.version||0)>=LIBRARY_MIN_VERSION&&cached._cachedAt&&(Date.now()-cached._cachedAt)<LIBRARY_TTL_MS){
         _libManifest=cached;return cached;
       }
     }catch(_){}
@@ -1527,30 +1528,6 @@ async function searchPokemon(q,lang,limit,opts){
   opts=opts||{};
   /* Charge le manifest library en parallele (lazy, cache 24h) */
   const libPromise=loadLibraryManifest();
-
-  /* Library d'abord : si elle a des resultats, on commence par la */
-  await libPromise;
-  const libResults=searchLibrary(q,lang,opts).slice(0,limit||60);
-  /* Si la library a beaucoup de resultats, retourne sans appeler l'API
-     (ca evite des appels inutiles. Les prix seront fetched a l'ajout) */
-  if(libResults.length>0 && (q||'').length>=3){
-    /* Fetch les prix en parallele via pokemontcg.io pour les cartes EN */
-    if(lang==='en'){
-      await Promise.all(libResults.map(async card=>{
-        try{
-          const data=await pokeFetchFallback(card._pokeId,card.number);
-          if(data){
-            const cm=data.cardmarket?.prices;
-            const tp=data.tcgplayer?.prices;
-            const tpMarket=tp?Object.values(tp)[0]?.market:null;
-            const p=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
-            if(p!=null)card.price=Math.round(p*100)/100;
-          }
-        }catch(_){}
-      }));
-    }
-    return libResults;
-  }
   // EN → pokemontcg.io (avec prix, syntaxe Lucene)
   if(lang==='en'){
     const qParts=[];
@@ -1572,7 +1549,7 @@ async function searchPokemon(q,lang,limit,opts){
       const price=cm?.averageSellPrice||cm?.trendPrice||(tpMarket?tpMarket*0.92:null);
       return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,lang:'en',_pokeId:c.id};
     });
-    return applyLibraryToResults(out);
+    return mergeWithLibrary(out,q,lang,opts,limit);
   }
   // Autres langues → TCGdex
   if(!L.tcgdex)return [];
@@ -1648,7 +1625,21 @@ async function searchPokemon(q,lang,limit,opts){
     }catch(_){}
   }));
   await libPromise;
-  return applyLibraryToResults(cards);
+  return mergeWithLibrary(cards,q,lang,opts,limit||60);
+}
+
+/* Fusionne resultats API avec library (ajoute les cartes que l'API n'a pas, override images) */
+function mergeWithLibrary(apiCards,q,lang,opts,limit){
+  const out=Array.isArray(apiCards)?apiCards.slice():[];
+  applyLibraryToResults(out);
+  if(!_libManifest)return out;
+  /* Ajoute les cartes presentes dans la library mais absentes de l'API */
+  const seen=new Set(out.map(c=>(c._pokeId||'').toLowerCase()));
+  const libExtra=searchLibrary(q,lang,opts).filter(c=>!seen.has((c._pokeId||'').toLowerCase()));
+  if(libExtra.length){
+    for(const c of libExtra){if(out.length>=limit)break;out.push(c)}
+  }
+  return out;
 }
 
 async function searchYugioh(q,lang,limit,opts){
