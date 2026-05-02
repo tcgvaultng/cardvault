@@ -232,8 +232,17 @@ img[data-zoom]{cursor:zoom-in}
 .loader{position:fixed;inset:0;background:rgba(11,6,24,.8);z-index:150;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:var(--text-dim);font-family:'Cinzel',serif;letter-spacing:.08em;font-size:13px;text-transform:uppercase}
 .loader .spinner{width:42px;height:42px;border-width:3px}
 
-.card-detail img{width:100%;max-width:240px;border-radius:10px;display:block;margin:0 auto 14px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
-.card-detail .price-big{text-align:center;font-family:'Cinzel',serif;font-size:32px;color:var(--gold-2);margin-bottom:12px}
+/* Card detail : layout vertical compact, tout centré (mobile + desktop) */
+.card-detail{display:flex!important;flex-direction:column!important;align-items:center!important;gap:12px;max-width:480px;margin:0 auto!important;text-align:center}
+.card-detail > *{grid-column:auto!important;grid-row:auto!important}
+.card-detail img{width:100%;max-width:240px;border-radius:10px;display:block;margin:0 auto 6px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.card-detail #cardImgWrap,.card-detail #addImgWrap{display:flex;justify-content:center;align-items:center;text-align:center;width:100%;margin:0 auto}
+.card-detail .price-big{text-align:center;font-family:'Cinzel',serif;font-size:32px;color:var(--gold-2);margin-bottom:8px;width:100%}
+.card-detail .meta-grid,.card-detail .field,.card-detail .row{width:100%;margin-left:auto;margin-right:auto;text-align:left}
+.card-detail .field label{text-align:left}
+.card-detail .row{justify-content:center}
+.card-detail .muted{text-align:center;width:100%}
+.card-detail button.btn-block{margin-left:auto;margin-right:auto}
 .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
 .meta-item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px}
 .meta-item .l{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:.05em}
@@ -297,6 +306,7 @@ img.err-hide{visibility:hidden}
   .modal{max-width:720px;border-radius:var(--radius-lg)}
   /* Card list 2 colonnes */
   #allCardsList,#manualList .search-res,.search-res{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+  .card-detail{max-width:520px}
   .card-detail img{max-width:260px}
 }
 
@@ -354,12 +364,11 @@ img.err-hide{visibility:hidden}
   .card-row img{width:60px;height:84px;flex-shrink:0}
   .card-row .nm{font-size:15px}
   /* Card detail : single column centrée (image + infos empilées) */
-  .card-detail{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:520px;margin:0 auto;text-align:center}
-  .card-detail img{max-width:300px}
-  .card-detail .meta-grid,.card-detail .field,.card-detail .row{width:100%;max-width:420px;text-align:left}
-  .card-detail #cardImgWrap,.card-detail #addImgWrap{display:flex;justify-content:center}
+  .card-detail{max-width:560px;gap:16px}
+  .card-detail img{max-width:280px}
+  .card-detail .meta-grid,.card-detail .field,.card-detail .row{max-width:440px}
   /* Modal carte : largeur compacte, contenu centré */
-  .modal:has(.card-detail){max-width:640px}
+  .modal:has(.card-detail){max-width:680px}
   /* Forms longs : limite max-width pour lisibilité */
   .panel form,.panel .field-group{max-width:760px}
   .sync-status{max-width:240px;font-size:12px}
@@ -1603,7 +1612,7 @@ function switchView(name){
 /* ==================== GIST SYNC (v6 — merge par timestamp) ==================== */
 const GIST_FILE='cardvault.json';
 const GIST_VERSION=6;
-const APP_VERSION='2.1.0';
+const APP_VERSION='2.2.0';
 const SYNC_INTERVAL_MS=20000;
 let _pullInFlight=null;
 let _lastSyncAt=0;
