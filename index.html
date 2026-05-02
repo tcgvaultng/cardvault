@@ -637,6 +637,13 @@ function libraryUrlFor(game,lang,cardId){
   return _libManifest.url_base+'/'+path.split('/').map(encodeURIComponent).join('/');
 }
 
+/* Retourne l'URL du verso si la carte est double-face, sinon null */
+function libraryBackUrlFor(game,lang,cardId){
+  const entry=_libEntryFor(game,lang,cardId);
+  if(!entry||typeof entry!=='object'||!entry.b)return null;
+  return _libManifest.url_base+'/'+entry.b.split('/').map(encodeURIComponent).join('/');
+}
+
 /* Rafraichit la collection : pour chaque carte Pokemon, remet a jour image (R2),
    set name, setCode, number depuis le manifest. A appeler quand le manifest est
    charge ou refresh. Retourne {touched: nb de cartes modifiees}. */
@@ -1436,9 +1443,14 @@ function openCardDetail(cardId){
   if(!c)return;
   const g=GAMES[c.game]||{name:c.game};
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
+  /* Verso si carte double-face */
+  const backUrl=libraryBackUrlFor(c.game,c.lang,_libCardIdFor(c));
   openModal('Détails de la carte',
     '<div class="card-detail">'
+    +'<div id="cardImgWrap" data-front="'+esc(c.image||'')+'" data-back="'+esc(backUrl||'')+'" data-side="front">'
     +imgTag(c.image)
+    +'</div>'
+    +(backUrl?'<button class="btn btn-ghost btn-block mb-10" data-act="flipCardImage">↻ Retourner la carte</button>':'')
     +'<div class="price-big">'+fmtEur(c.price)+'</div>'
     +'<div class="meta-grid">'
     +'<div class="meta-item"><div class="l">Nom</div><div class="v">'+esc(c.name)+'</div></div>'
@@ -2527,6 +2539,15 @@ function browseToggleHighlight(){
   _browseState.highlight=!_browseState.highlight;
   renderBrowse();
 }
+function flipCardImage(){
+  const wrap=document.getElementById('cardImgWrap');
+  if(!wrap)return;
+  const side=wrap.dataset.side==='front'?'back':'front';
+  const url=wrap.dataset[side];
+  if(!url)return;
+  const img=wrap.querySelector('img');
+  if(img){img.src=url;wrap.dataset.side=side}
+}
 function browsePickCard(idx){
   const c=_browseCardCache[idx];
   if(!c)return;
@@ -2690,7 +2711,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
-  browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,
+  browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,
   switchView
 });
 
