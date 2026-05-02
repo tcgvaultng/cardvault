@@ -2348,6 +2348,25 @@ function renderBrowse(){
     s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
     if(meta.name&&!s.namedFromManifest)s.name=meta.name;
   }
+  /* Compte les cartes possedees par setCode (uniques par game+lang+setCode+number) */
+  const u=getUser();
+  const ownedBySet=new Map();
+  if(u&&u.cards){
+    for(const c of u.cards){
+      if(c.game!==game)continue;
+      if((c.lang||'en')!==lang)continue;
+      const sc=(c.setCode||'').toLowerCase();
+      if(!sc)continue;
+      if(!ownedBySet.has(sc))ownedBySet.set(sc,new Set());
+      const num=String(c.number||'').replace(/^0+/,'').toLowerCase();
+      ownedBySet.get(sc).add(num);
+    }
+  }
+  for(const s of sets.values()){
+    s.owned=(ownedBySet.get(s.code)||new Set()).size;
+    s.pct=s.count>0?Math.round(s.owned*100/s.count):0;
+    if(s.pct>100)s.pct=100;
+  }
   let arr=Array.from(sets.values());
   if(filter)arr=arr.filter(s=>s.name.toLowerCase().includes(filter)||s.code.includes(filter));
   /* Tri par date de sortie (plus recent en premier) */
@@ -2367,18 +2386,28 @@ function renderBrowse(){
     return;
   }
 
-  box.innerHTML='<div class="muted mb-10">'+arr.length+' extensions • '+arr.reduce((s,x)=>s+x.count,0)+' cartes (triees par date de sortie)</div>'
+  /* Stats globales */
+  const totalOwned=arr.reduce((s,x)=>s+x.owned,0);
+  const totalCount=arr.reduce((s,x)=>s+x.count,0);
+  const totalPct=totalCount>0?Math.round(totalOwned*100/totalCount):0;
+  box.innerHTML='<div class="muted mb-10">'+arr.length+' extensions • <b>'+totalOwned+' / '+totalCount+'</b> cartes possédées ('+totalPct+'%) — triées par date de sortie</div>'
     +'<div class="coll-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">'
     +arr.map(s=>{
       const cover=s.logo||s.sampleCard;
       const fallback=s.sampleCard;
       const releaseTxt=s.releaseDate?(' • '+s.releaseDate.slice(0,4)):'';
+      const barColor=s.pct>=95?'var(--green)':s.pct>=50?'var(--gold-2)':s.pct>=20?'var(--violet-2)':'var(--text-mute)';
       return '<div class="coll-card" data-act="browseOpenSet" data-args="'+esc(JSON.stringify([s.code]))+'" style="padding:8px">'
-        +'<div style="background:rgba(0,0,0,.3);border-radius:6px;height:120px;display:flex;align-items:center;justify-content:center;padding:8px">'
+        +'<div style="background:rgba(0,0,0,.3);border-radius:6px;height:120px;display:flex;align-items:center;justify-content:center;padding:8px;position:relative">'
         +'<img src="'+esc(cover||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(fallback||PLACEHOLDER_IMG)+'" style="max-width:100%;max-height:100%;object-fit:contain">'
+        +(s.pct>=100?'<div style="position:absolute;top:6px;right:6px;background:var(--green);color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700">✓ Complète</div>':'')
         +'</div>'
         +'<div style="margin-top:6px;font-family:Cinzel,serif;font-size:13px;line-height:1.2">'+esc(s.name)+'</div>'
         +'<div style="font-size:11px;color:var(--gold-2);margin-top:2px">'+s.code.toUpperCase()+' • '+s.count+' cartes'+esc(releaseTxt)+'</div>'
+        +'<div style="margin-top:6px;background:rgba(255,255,255,.08);border-radius:6px;height:10px;overflow:hidden;position:relative">'
+        +'<div style="background:'+barColor+';height:100%;width:'+s.pct+'%;transition:width .3s"></div>'
+        +'</div>'
+        +'<div style="font-size:11px;text-align:center;margin-top:3px;font-weight:600;color:'+barColor+'">'+s.owned+' / '+s.count+' ('+s.pct+'%)</div>'
         +'</div>';
     }).join('')+'</div>';
 }
