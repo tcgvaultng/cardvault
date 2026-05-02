@@ -2378,8 +2378,14 @@ function renderBrowse(){
     let filtered=cards;
     if(filterMode==='owned')filtered=cards.filter(c=>c._owned);
     else if(filterMode==='missing')filtered=cards.filter(c=>!c._owned);
+    /* Toggle "surligner manquantes" : true par defaut */
+    if(typeof _browseState.highlight!=='boolean')_browseState.highlight=true;
+    const hi=_browseState.highlight;
     box.innerHTML='<button class="btn btn-ghost btn-sm mb-10" data-act="browseBack">← Retour aux extensions</button>'
       +'<h3 style="font-family:Cinzel,serif;color:var(--gold-2);margin-bottom:6px">'+esc(setName)+' <span class="muted" style="font-size:14px">('+ownedCount+' / '+cards.length+')</span></h3>'
+      +'<div class="row mb-10">'
+      +'<button class="btn '+(hi?'btn-primary':'btn-ghost')+' btn-sm" data-act="browseToggleHighlight">'+(hi?'🎨 Manquantes grisées : ON':'🎨 Manquantes grisées : OFF')+'</button>'
+      +'</div>'
       +'<div class="segmented mb-10">'
       +'<button class="'+(filterMode==='all'?'active':'')+'" data-act="browseFilterMode" data-args="[\"all\"]">Tout ('+cards.length+')</button>'
       +'<button class="'+(filterMode==='owned'?'active':'')+'" data-act="browseFilterMode" data-args="[\"owned\"]">✓ Possédées ('+ownedCount+')</button>'
@@ -2389,11 +2395,14 @@ function renderBrowse(){
       +filtered.map((c,i)=>{
         const cidx=_browseCacheCard(c);
         const owned=c._owned;
-        const overlay=owned
+        const showOverlay=hi&&owned;
+        const greyOut=hi&&!owned;
+        const overlay=showOverlay
           ?'<div style="position:absolute;top:6px;right:6px;background:var(--green);color:#fff;font-size:14px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.5)">✓</div>'
           :'';
-        const imgStyle=owned?'':'filter:grayscale(75%) brightness(.55);';
-        return '<div class="coll-card" data-act="browsePickCard" data-args="'+esc(JSON.stringify([cidx]))+'" style="padding:6px;min-height:auto;position:relative;'+(owned?'border-color:var(--green)':'opacity:.85')+'">'
+        const imgStyle=greyOut?'filter:grayscale(75%) brightness(.55);':'';
+        const cardStyle=hi&&owned?'border-color:var(--green)':(greyOut?'opacity:.85':'');
+        return '<div class="coll-card" data-act="browsePickCard" data-args="'+esc(JSON.stringify([cidx]))+'" style="padding:6px;min-height:auto;position:relative;'+cardStyle+'">'
           +'<div style="position:relative">'
           +'<img src="'+esc(c.image||PLACEHOLDER_IMG)+'" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" style="width:100%;border-radius:6px;display:block;'+imgStyle+'">'
           +overlay
@@ -2512,6 +2521,10 @@ function browseBack(){
 }
 function browseFilterMode(mode){
   _browseState.filterMode=mode;
+  renderBrowse();
+}
+function browseToggleHighlight(){
+  _browseState.highlight=!_browseState.highlight;
   renderBrowse();
 }
 function browsePickCard(idx){
@@ -2677,7 +2690,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
-  browseOpenSet,browseBack,browsePickCard,browseFilterMode,
+  browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,
   switchView
 });
 
