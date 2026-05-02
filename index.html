@@ -403,7 +403,7 @@ const GAMES = {
   mtg:{name:'Magic',color:'#d04b2e',icon:'🔥',langs:['en','fr','de','it','es','pt','ja','ko','ru','zhs','zht']},
   pokemon:{name:'Pokémon',color:'#ffcb05',icon:'⚡',langs:['en','fr','de','it','es','pt','ja','ko','zht']},
   yugioh:{name:'Yu-Gi-Oh!',color:'#8b2eff',icon:'👁️',langs:['en','fr','de','it','pt']},
-  onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️',langs:['en','ja']}
+  onepiece:{name:'One Piece',color:'#e05a2e',icon:'🏴‍☠️',langs:['en','fr','ja']}
 };
 const AVATARS=['🧙','🐉','🦊','🐺','🦅','🐲','🦁','🐯','🐱','🦄','🤖','🧛','⚔️','🛡️','🏹','🔮','🧝','👑','🎭','🃏','💎','🌟','⚡','🔥'];
 const LANGS={
@@ -1546,6 +1546,14 @@ async function loadOnePieceData(){
 async function searchOnePiece(q,lang,limit,opts){
   opts=opts||{};
   const useJa=(lang==='ja');
+  const useFr=(lang==='fr');
+  /* FR : pas de source API officielle (vegapull n'a que EN+JA),
+     on retourne uniquement les resultats de la library R2 (qui a ~2400 OP FR scrapees) */
+  if(useFr){
+    await loadLibraryManifest();
+    const out=searchLibrary('onepiece',q,'fr',opts).slice(0,limit);
+    return out;
+  }
   const data=await loadOnePieceData();
   const cards=useJa?data.ja:data.en;
   if(!cards||cards.length===0){
