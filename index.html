@@ -3353,15 +3353,22 @@ async function captureCardOffline(){
         await loadLibraryManifest();
         const namedGame=geminiInfo.game?mapGame(geminiInfo.game):scanGame;
         const targetGame=(namedGame!=='auto'&&namedGame)?namedGame:null;
-        /* Cherche dans le manifest les cartes dont le nom matche celui de Gemini */
+        /* Cherche dans le manifest les cartes dont le nom matche celui de Gemini.
+           Respecte aussi le filtre extension (scanSet) si défini. */
         const nameNorm=geminiInfo.name.toLowerCase().replace(/[^a-z0-9]+/g,'');
         const candidateKeys=new Set();
         if(_libManifest&&_libManifest.cards){
           for(const k in _libManifest.cards){
             const e=_libManifest.cards[k];
             if(!e||typeof e!=='object'||!e.n)continue;
-            const [g]=k.split('|',1);
+            const parts=k.split('|',3);
+            const g=parts[0],l=parts[1],cardId=parts[2]||'';
             if(targetGame&&g!==targetGame)continue;
+            if(scanLang!=='auto'&&l!==scanLang)continue;
+            if(scanSet!=='auto'){
+              const sc=(e.s||cardId.split('-')[0]||'').toLowerCase();
+              if(sc!==scanSet)continue;
+            }
             const en=e.n.toLowerCase().replace(/[^a-z0-9]+/g,'');
             if(en.includes(nameNorm)||nameNorm.includes(en))candidateKeys.add(k);
           }
