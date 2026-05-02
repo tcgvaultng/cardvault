@@ -2348,22 +2348,39 @@ function renderBrowse(){
     s.orderIndex=typeof meta._orderIndex==='number'?meta._orderIndex:null;
     if(meta.name&&!s.namedFromManifest)s.name=meta.name;
   }
-  /* Compte les cartes possedees par setCode (uniques par game+lang+setCode+number) */
+  /* Compte les cartes possedees par setCode (cross-langue: peu importe la langue
+     de la carte, on compte si elle est du meme set+numero). Permet par exemple
+     de voir la progression d'un set FR meme si tu as les cartes en EN. */
   const u=getUser();
-  const ownedBySet=new Map();
+  const ownedBySet=new Map();   /* lang-specific */
+  const ownedAnyLang=new Map(); /* toutes langues */
   if(u&&u.cards){
     for(const c of u.cards){
       if(c.game!==game)continue;
-      if((c.lang||'en')!==lang)continue;
-      const sc=(c.setCode||'').toLowerCase();
-      if(!sc)continue;
-      if(!ownedBySet.has(sc))ownedBySet.set(sc,new Set());
-      const num=String(c.number||'').replace(/^0+/,'').toLowerCase();
-      ownedBySet.get(sc).add(num);
+      let sc=(c.setCode||'').toLowerCase();
+      let num=String(c.number||'').replace(/^0+/,'').toLowerCase();
+      /* Fallback : derive setCode/number du _pokeId si manquant */
+      if((!sc||!num)&&_libCardIdFor(c)){
+        const m=String(_libCardIdFor(c)).match(/^(.+)-([A-Za-z0-9_]+)$/);
+        if(m){
+          if(!sc)sc=m[1].toLowerCase();
+          if(!num)num=m[2].replace(/^0+/,'').toLowerCase();
+        }
+      }
+      if(!sc||!num)continue;
+      if(!ownedAnyLang.has(sc))ownedAnyLang.set(sc,new Set());
+      ownedAnyLang.get(sc).add(num);
+      if((c.lang||'en')===lang){
+        if(!ownedBySet.has(sc))ownedBySet.set(sc,new Set());
+        ownedBySet.get(sc).add(num);
+      }
     }
   }
   for(const s of sets.values()){
-    s.owned=(ownedBySet.get(s.code)||new Set()).size;
+    const langOwned=(ownedBySet.get(s.code)||new Set()).size;
+    const anyOwned=(ownedAnyLang.get(s.code)||new Set()).size;
+    s.owned=anyOwned;            /* cross-langue: total possedees */
+    s.ownedInLang=langOwned;     /* dans la langue selectionnee */
     s.pct=s.count>0?Math.round(s.owned*100/s.count):0;
     if(s.pct>100)s.pct=100;
   }
