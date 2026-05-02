@@ -272,6 +272,11 @@ img.err-hide{visibility:hidden}
     <section id="view-add" class="view">
       <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Ajouter une carte</h2>
       <div class="panel">
+        <div class="panel-title">📥 Upload manuel (scan + infos)</div>
+        <div class="muted mb-10">Ajoute une carte que les API ne connaissent pas (variantes, regional promos, scan perso). Image upload R2.</div>
+        <button class="btn btn-violet btn-block" data-act="openManualAdd">📷 Ouvrir le formulaire</button>
+      </div>
+      <div class="panel">
         <div class="panel-title">📷 Scanner IA (Gemini)</div>
         <div class="cam-wrap hidden" id="camWrap">
           <video id="camVideo" autoplay playsinline muted></video>
@@ -383,6 +388,16 @@ img.err-hide{visibility:hidden}
         <div id="cfgSyncStatus" class="hint mt-10"></div>
       </div>
       <div class="panel">
+        <div class="panel-title">🪣 R2 (upload manuel de cartes)</div>
+        <div class="muted mb-10">Permet d'ajouter tes scans persos / nouvelles extensions via le site.</div>
+        <div class="field"><label>Endpoint S3</label><input id="cfgR2Endpoint" placeholder="https://XXX.r2.cloudflarestorage.com"></div>
+        <div class="row"><div class="field"><label>Access Key ID</label><input id="cfgR2Access" type="password" placeholder="ca11..."></div>
+        <div class="field"><label>Secret Access Key</label><input id="cfgR2Secret" type="password" placeholder="423..."></div></div>
+        <div class="row"><div class="field"><label>Bucket</label><input id="cfgR2Bucket" placeholder="cardvault-library"></div>
+        <div class="field"><label>URL publique</label><input id="cfgR2PublicUrl" placeholder="https://pub-XXX.r2.dev"></div></div>
+        <button class="btn btn-primary btn-block" data-act="saveR2Config">💾 Enregistrer R2</button>
+      </div>
+      <div class="panel">
         <div class="panel-title">📚 Library partagée</div>
         <div class="muted">~83 000 cartes Pokemon + One Piece + MTG en haute-rés (R2).</div>
         <button class="btn btn-violet btn-block mt-10" data-act="refreshLibraryAndCollection">🔄 Mettre à jour les visuels de ma collection</button>
@@ -440,7 +455,7 @@ const LANGS={
   zht:{label:'🇹🇼 繁體中文',sf:'zht',ygo:'',tcgdex:'zh-tw'}
 };
 
-let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:''}};
+let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:'',r2Endpoint:'',r2AccessKey:'',r2SecretKey:'',r2Bucket:'cardvault-library',r2PublicUrl:''}};
 let CAM_STREAM=null;
 let _searchCache=[];
 let _scanCache=[];
@@ -503,11 +518,16 @@ function loadLocal(){
       const p=JSON.parse(r);
       STATE=Object.assign(STATE,p);
       if(!STATE.users)STATE.users={};
-      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''};
+      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:'',r2Endpoint:'',r2AccessKey:'',r2SecretKey:'',r2Bucket:'cardvault-library',r2PublicUrl:''};
       else{
         if(STATE.config.githubToken==null)STATE.config.githubToken='';
         if(STATE.config.gistId==null)STATE.config.gistId='';
         if(STATE.config.geminiKey==null)STATE.config.geminiKey='';
+        if(STATE.config.r2Endpoint==null)STATE.config.r2Endpoint='';
+        if(STATE.config.r2AccessKey==null)STATE.config.r2AccessKey='';
+        if(STATE.config.r2SecretKey==null)STATE.config.r2SecretKey='';
+        if(STATE.config.r2Bucket==null)STATE.config.r2Bucket='cardvault-library';
+        if(STATE.config.r2PublicUrl==null)STATE.config.r2PublicUrl='';
         delete STATE.config.imagesRepo;
       }
       /* Migration v5 → v6 : chaque profil et chaque carte a un updatedAt */
@@ -696,6 +716,127 @@ function refreshCollectionFromLibrary(){
     try{renderAllCards()}catch(_){}
   }
   return {touched,total:u.cards.length};
+}
+
+/* ==================== UPLOAD MANUEL VERS R2 (signature AWS V4) ==================== */
+async function _sha256Hex(data){
+  const buf=typeof data==='string'?new TextEncoder().encode(data):data;
+  const h=await crypto.subtle.digest('SHA-256',buf);
+  return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function _hmacSha256(key,data){
+  const k=typeof key==='string'?new TextEncoder().encode(key):key;
+  const d=typeof data==='string'?new TextEncoder().encode(data):data;
+  const ck=await crypto.subtle.importKey('raw',k,{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC',ck,d));
+}
+async function _sigV4Sign(method,host,path,body,accessKey,secretKey,region='auto',service='s3'){
+  const now=new Date();
+  const yyyymmdd=now.toISOString().slice(0,10).replace(/-/g,'');
+  const amzDate=now.toISOString().replace(/[:-]|\.\d{3}/g,'');
+  const payloadHash=await _sha256Hex(body||new Uint8Array());
+  const canonicalHeaders='host:'+host+'\nx-amz-content-sha256:'+payloadHash+'\nx-amz-date:'+amzDate+'\n';
+  const signedHeaders='host;x-amz-content-sha256;x-amz-date';
+  const canonicalRequest=method+'\n'+path+'\n\n'+canonicalHeaders+'\n'+signedHeaders+'\n'+payloadHash;
+  const credScope=yyyymmdd+'/'+region+'/'+service+'/aws4_request';
+  const stringToSign='AWS4-HMAC-SHA256\n'+amzDate+'\n'+credScope+'\n'+await _sha256Hex(canonicalRequest);
+  let key=await _hmacSha256('AWS4'+secretKey,yyyymmdd);
+  key=await _hmacSha256(key,region);
+  key=await _hmacSha256(key,service);
+  key=await _hmacSha256(key,'aws4_request');
+  const sig=Array.from(await _hmacSha256(key,stringToSign)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const auth='AWS4-HMAC-SHA256 Credential='+accessKey+'/'+credScope+', SignedHeaders='+signedHeaders+', Signature='+sig;
+  return {Authorization:auth,'x-amz-date':amzDate,'x-amz-content-sha256':payloadHash};
+}
+async function r2PutObject(key,blob,contentType){
+  const cfg=STATE.config;
+  if(!cfg.r2Endpoint||!cfg.r2AccessKey||!cfg.r2SecretKey)throw new Error('R2 non configure (Config)');
+  const url=new URL(cfg.r2Endpoint);
+  const bucket=cfg.r2Bucket||'cardvault-library';
+  const path='/'+bucket+'/'+key.split('/').map(encodeURIComponent).join('/');
+  const body=new Uint8Array(await blob.arrayBuffer());
+  const headers=await _sigV4Sign('PUT',url.host,path,body,cfg.r2AccessKey,cfg.r2SecretKey);
+  headers['Content-Type']=contentType||'image/webp';
+  const r=await fetch(url.origin+path,{method:'PUT',headers,body});
+  if(!r.ok){const t=await r.text().catch(()=>'');throw new Error('R2 PUT '+r.status+': '+t.slice(0,200))}
+  return true;
+}
+async function compressImageWebp(file,maxW=500,maxH=690,quality=0.8){
+  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)});
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  const ratio=Math.min(maxW/img.width,maxH/img.height,1);
+  const w=Math.max(1,Math.round(img.width*ratio));
+  const h=Math.max(1,Math.round(img.height*ratio));
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  cv.getContext('2d').drawImage(img,0,0,w,h);
+  return await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('encode webp')),'image/webp',quality));
+}
+
+/* Modal pour ajouter une carte manuellement (image + metadonnees) */
+function openManualAdd(){
+  const cfg=STATE.config;
+  if(!cfg.r2Endpoint||!cfg.r2AccessKey||!cfg.r2SecretKey){
+    toast('Configure d\'abord R2 dans Config','err');switchView('config');return;
+  }
+  const u=getUser();if(!u)return;
+  const gameOpts=Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('');
+  openModal('📷 Ajouter une carte manuellement',
+    '<div class="field"><label>Image de la carte</label><input id="ma_file" type="file" accept="image/*"></div>'
+    +'<div class="row"><div class="field"><label>Jeu</label><select id="ma_game">'+gameOpts+'</select></div>'
+    +'<div class="field"><label>Langue</label><select id="ma_lang"></select></div></div>'
+    +'<div class="row"><div class="field"><label>Code extension</label><input id="ma_setcode" placeholder="ex inr, swsh1, OP15"></div>'
+    +'<div class="field"><label>Numéro</label><input id="ma_number" placeholder="ex 327, 001"></div></div>'
+    +'<div class="field"><label>Nom de l\'extension</label><input id="ma_setname" placeholder="ex Innistrad Remastered"></div>'
+    +'<div class="field"><label>Nom de la carte</label><input id="ma_name" placeholder="ex Gardien de la lignée"></div>'
+    +'<div class="field"><label>Prix (€) optionnel</label><input id="ma_price" type="number" step="0.01" placeholder="0.00"></div>'
+    +'<div id="ma_status" class="hint mt-10"></div>'
+    +'<button class="btn btn-primary btn-block mt-10" id="ma_submit">📤 Uploader & ajouter à ma collection</button>',
+    ()=>{
+      const gameSel=document.getElementById('ma_game');
+      const langSel=document.getElementById('ma_lang');
+      const refresh=()=>{
+        const langs=GAMES[gameSel.value]?.langs||['en'];
+        langSel.innerHTML=langs.map(k=>'<option value="'+k+'">'+(LANGS[k]?.label||k)+'</option>').join('');
+      };
+      gameSel.addEventListener('change',refresh);refresh();
+      document.getElementById('ma_submit').addEventListener('click',async()=>{
+        const file=document.getElementById('ma_file').files?.[0];
+        const game=gameSel.value;const lang=langSel.value;
+        const sc=document.getElementById('ma_setcode').value.trim().toLowerCase();
+        const num=document.getElementById('ma_number').value.trim();
+        const setName=document.getElementById('ma_setname').value.trim();
+        const cardName=document.getElementById('ma_name').value.trim();
+        const price=parseFloat(document.getElementById('ma_price').value)||null;
+        const status=document.getElementById('ma_status');
+        if(!file||!game||!lang||!sc||!num||!cardName){status.textContent='⚠️ Remplis tous les champs requis';status.style.color='var(--red)';return}
+        try{
+          status.style.color='var(--text-dim)';
+          status.textContent='Compression…';
+          const blob=await compressImageWebp(file);
+          const cardId=sc+'-'+num;
+          const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
+          status.textContent='Upload R2 ('+(blob.size/1024).toFixed(0)+' KB)…';
+          await r2PutObject(key,blob,'image/webp');
+          const publicUrl=(cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev')+'/'+key.split('/').map(encodeURIComponent).join('/');
+          /* Choix collection */
+          if(!u.collections||u.collections.length===0){
+            if(!confirm('Aucune collection. Créer "Principale" ?'))return;
+            u.collections.push({id:uid(),name:'Principale',color:'#c9a04b',createdAt:Date.now()});
+          }
+          const cid=u.collections[0].id;
+          const now=Date.now();
+          const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
+          const newCard={id:uid(),collectionId:cid,name:cardName,printedName:cardName,
+            game,set:setName||sc.toUpperCase(),setCode:sc,number:num,
+            image:publicUrl,price,quantity:1,lang,addedAt:now,updatedAt:now};
+          newCard[idField]=cardId;
+          u.cards=u.cards||[];u.cards.push(newCard);
+          touchActiveUser();saveLocal();scheduleSync();
+          toast('Carte ajoutée ✓','ok');
+          closeModal();renderCollections();renderAllCards();
+        }catch(e){status.textContent='❌ '+e.message;status.style.color='var(--red)';console.error(e)}
+      });
+    });
 }
 
 /* Resout l'ID utilise dans le manifest selon le jeu */
@@ -1277,6 +1418,16 @@ function saveGemini(){
   STATE.config.geminiKey=document.getElementById('cfgGemini').value.trim();
   saveLocal();
   toast('Clé Gemini enregistrée ✓','ok');
+}
+
+function saveR2Config(){
+  STATE.config.r2Endpoint=document.getElementById('cfgR2Endpoint').value.trim();
+  STATE.config.r2AccessKey=document.getElementById('cfgR2Access').value.trim();
+  STATE.config.r2SecretKey=document.getElementById('cfgR2Secret').value.trim();
+  STATE.config.r2Bucket=document.getElementById('cfgR2Bucket').value.trim()||'cardvault-library';
+  STATE.config.r2PublicUrl=document.getElementById('cfgR2PublicUrl').value.trim();
+  saveLocal();scheduleSync();
+  toast('R2 config enregistrée ✓','ok');
 }
 
 function resetApp(){
@@ -2675,6 +2826,11 @@ function renderConfig(){
   document.getElementById('cfgToken').value=STATE.config.githubToken||'';
   document.getElementById('cfgGistId').value=STATE.config.gistId||'';
   document.getElementById('cfgGemini').value=STATE.config.geminiKey||'';
+  const r2e=document.getElementById('cfgR2Endpoint');if(r2e)r2e.value=STATE.config.r2Endpoint||'';
+  const r2a=document.getElementById('cfgR2Access');if(r2a)r2a.value=STATE.config.r2AccessKey||'';
+  const r2s=document.getElementById('cfgR2Secret');if(r2s)r2s.value=STATE.config.r2SecretKey||'';
+  const r2b=document.getElementById('cfgR2Bucket');if(r2b)r2b.value=STATE.config.r2Bucket||'cardvault-library';
+  const r2p=document.getElementById('cfgR2PublicUrl');if(r2p)r2p.value=STATE.config.r2PublicUrl||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
 }
 
@@ -2710,7 +2866,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
+  saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
   browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,
   switchView
 });
