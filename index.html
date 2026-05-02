@@ -402,12 +402,15 @@ img.err-hide{visibility:hidden}
   .tabbar .user-chip.in-sidebar .av{width:32px;height:32px;flex-shrink:0;font-size:16px}
   .tabbar .user-chip.in-sidebar .nm{flex:1;min-width:0;font-size:14px;color:var(--text);font-weight:500;max-width:none;overflow:hidden;text-overflow:ellipsis}
 
-  /* === Vue Ajouter en 2 colonnes : Upload+Scanner gauche, Recherche droite === */
+  /* === Vue Ajouter en 2 colonnes : Upload gauche, Recherche droite === */
+  /* Scanner caméra masqué sur desktop (peu pratique sans webcam) */
+  #panelScannerCam{display:none!important}
   #view-add.active{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
   #view-add.active > h2{grid-column:1/-1;margin-bottom:0}
+  /* 1er panel = Upload manuel → col gauche */
   #view-add.active > .panel:nth-of-type(1){grid-column:1;grid-row:2}
-  #view-add.active > .panel:nth-of-type(2){grid-column:1;grid-row:3}
-  #view-add.active > .panel:nth-of-type(3){grid-column:2;grid-row:2/span 2;position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow-y:auto}
+  /* 3e panel = Recherche manuelle → col droite (le 2e = scanner caméra masqué) */
+  #view-add.active > .panel:nth-of-type(3){grid-column:2;grid-row:2;position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow-y:auto}
 }
 
 /* ==================== Touch targets — toutes tailles ==================== */
@@ -470,7 +473,7 @@ img.err-hide{visibility:hidden}
         <button class="btn btn-violet btn-block" data-act="openManualAdd">📷 Ajouter une carte manuelle</button>
         <button class="btn btn-ghost btn-block mt-10" data-act="openManualList">📋 Voir/modifier mes ajouts manuels</button>
       </div>
-      <div class="panel">
+      <div class="panel" id="panelScannerCam">
         <div class="panel-title">📷 Scanner caméra</div>
         <div class="row scan-filters" style="gap:6px;margin-bottom:8px">
           <select id="scanGame" style="flex:1">
