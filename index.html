@@ -349,9 +349,9 @@ img.err-hide{visibility:hidden}
       <div class="panel">
         <div class="panel-title">☁️ GitHub Gist</div>
         <div class="field">
-          <label>Token GitHub (scope: gist [+ repo si images privées])</label>
+          <label>Token GitHub (scope: gist)</label>
           <input id="cfgToken" type="password" placeholder="ghp_...">
-          <div class="hint">github.com/settings/tokens/new → coche "gist" (et "repo" si tu uploades des visuels persos)</div>
+          <div class="hint">github.com/settings/tokens/new → coche "gist"</div>
         </div>
         <div class="field">
           <label>Gist ID</label>
@@ -363,17 +363,6 @@ img.err-hide{visibility:hidden}
         </div>
         <button class="btn btn-violet btn-block mt-10" data-act="openAddDevice">📱 Ajouter un appareil</button>
         <div id="cfgSyncStatus" class="hint mt-10"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-title">🖼️ Images privées (optionnel)</div>
-        <div class="field">
-          <label>Repo GitHub privé pour images</label>
-          <input id="cfgImagesRepo" placeholder="owner/cardvault-images">
-          <div class="hint">Crée un repo privé sur GitHub. Le token doit avoir scope <b>repo</b>.</div>
-        </div>
-        <button class="btn btn-primary btn-block" data-act="saveImagesRepo">💾 Enregistrer le repo images</button>
-        <button class="btn btn-violet btn-block mt-10" data-act="openBatchUpload">📦 Upload en masse (visuels persos)</button>
-        <div class="hint mt-10">Les visuels persos seront compressés (WebP 800×1100) et uploadés ici. Affichage privé via ton token.</div>
       </div>
       <div class="panel">
         <div class="panel-title">✨ Clé Gemini (Scan IA)</div>
@@ -425,7 +414,7 @@ const LANGS={
   zht:{label:'🇹🇼 繁體中文',sf:'zht',ygo:'',tcgdex:'zh-tw'}
 };
 
-let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:'',imagesRepo:''}};
+let STATE={users:{},activeUser:null,config:{githubToken:'',gistId:'',geminiKey:''}};
 let CAM_STREAM=null;
 let _searchCache=[];
 let _scanCache=[];
@@ -488,12 +477,12 @@ function loadLocal(){
       const p=JSON.parse(r);
       STATE=Object.assign(STATE,p);
       if(!STATE.users)STATE.users={};
-      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:'',imagesRepo:''};
+      if(!STATE.config)STATE.config={githubToken:'',gistId:'',geminiKey:''};
       else{
         if(STATE.config.githubToken==null)STATE.config.githubToken='';
         if(STATE.config.gistId==null)STATE.config.gistId='';
         if(STATE.config.geminiKey==null)STATE.config.geminiKey='';
-        if(STATE.config.imagesRepo==null)STATE.config.imagesRepo='';
+        delete STATE.config.imagesRepo;
       }
       /* Migration v5 → v6 : chaque profil et chaque carte a un updatedAt */
       const now=Date.now();
@@ -577,79 +566,8 @@ function showLoader(label='Chargement…'){hideLoader();const el=document.create
 function hideLoader(){const l=document.getElementById('__loader');if(l)l.remove()}
 function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.activeUser])STATE.users[STATE.activeUser]={collections:[],cards:[],avatar:'🃏',createdAt:Date.now()};return STATE.users[STATE.activeUser]}
 const PLACEHOLDER_IMG='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1a3e"/><stop offset="1" stop-color="#1a0a2e"/></linearGradient></defs><rect width="100" height="140" rx="8" fill="url(#g)"/><text x="50" y="76" text-anchor="middle" font-size="36" fill="#c9a04b">🂠</text><text x="50" y="108" text-anchor="middle" font-size="10" font-family="serif" fill="#b8a9d4">no image</text></svg>');
-/* ==================== IMAGES PRIVEES (repo GitHub prive) ==================== */
-const PRIV_PREFIX='gh-private://';
-const _imgBlobUrlCache=new Map();
-function isPrivImage(ref){return typeof ref==='string'&&ref.startsWith(PRIV_PREFIX)}
-
-async function compressImageFile(file,maxW=800,maxH=1100,quality=0.82){
-  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)});
-  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
-  const ratio=Math.min(maxW/img.width,maxH/img.height,1);
-  const w=Math.max(1,Math.round(img.width*ratio));
-  const h=Math.max(1,Math.round(img.height*ratio));
-  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-  const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
-  return await new Promise((res,rej)=>{canvas.toBlob(b=>b?res(b):rej(new Error('Compression échouée')),'image/webp',quality)});
-}
-async function _blobToBase64(blob){
-  return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const s=r.result;const i=s.indexOf(',');res(i>=0?s.slice(i+1):s)};r.onerror=rej;r.readAsDataURL(blob)});
-}
-async function uploadPrivateImage(file,cardId){
-  const repo=STATE.config.imagesRepo;const token=STATE.config.githubToken;
-  if(!repo)throw new Error('Repo images privé non configuré (Config)');
-  if(!token)throw new Error('Token GitHub manquant (Config)');
-  const blob=await compressImageFile(file);
-  const b64=await _blobToBase64(blob);
-  const path='cards/'+cardId+'.webp';
-  let sha;
-  try{const r0=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{headers:{Authorization:'token '+token}});if(r0.ok){const j0=await r0.json();sha=j0.sha}}catch(_){}
-  const body={message:'Upload card '+cardId,content:b64};if(sha)body.sha=sha;
-  const r=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{method:'PUT',headers:{Authorization:'token '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error('HTTP '+r.status+' '+(e.message||''))}
-  await idbSet('img:'+path,blob);
-  const url=URL.createObjectURL(blob);_imgBlobUrlCache.set(path,url);
-  return PRIV_PREFIX+path;
-}
-async function resolvePrivateImage(ref){
-  if(!isPrivImage(ref))return ref;
-  const path=ref.slice(PRIV_PREFIX.length);
-  if(_imgBlobUrlCache.has(path))return _imgBlobUrlCache.get(path);
-  const cached=await idbGet('img:'+path);
-  if(cached){const url=URL.createObjectURL(cached);_imgBlobUrlCache.set(path,url);return url}
-  const repo=STATE.config.imagesRepo;const token=STATE.config.githubToken;
-  if(!repo||!token)return PLACEHOLDER_IMG;
-  try{
-    const r=await fetch('https://api.github.com/repos/'+repo+'/contents/'+path,{headers:{Authorization:'token '+token,Accept:'application/vnd.github.raw'}});
-    if(!r.ok)return PLACEHOLDER_IMG;
-    const blob=await r.blob();
-    await idbSet('img:'+path,blob);
-    const url=URL.createObjectURL(blob);_imgBlobUrlCache.set(path,url);
-    return url;
-  }catch(e){return PLACEHOLDER_IMG}
-}
-const _privImgIO=('IntersectionObserver' in window)?new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){_privImgIO.unobserve(e.target);_resolvePrivImg(e.target)}})},{rootMargin:'200px'}):null;
-function _resolvePrivImg(img){const path=img.dataset.priv;if(!path||img.dataset.privDone)return;img.dataset.privDone='1';resolvePrivateImage(PRIV_PREFIX+path).then(url=>{img.src=url}).catch(()=>{})}
-function _watchPrivImgs(){
-  const mo=new MutationObserver(muts=>{
-    muts.forEach(m=>{m.addedNodes.forEach(n=>{
-      if(n.nodeType!==1)return;
-      const list=n.querySelectorAll?n.querySelectorAll('img[data-priv]:not([data-priv-done])'):[];
-      list.forEach(img=>{if(_privImgIO)_privImgIO.observe(img);else _resolvePrivImg(img)});
-      if(n.matches&&n.matches('img[data-priv]')){if(_privImgIO)_privImgIO.observe(n);else _resolvePrivImg(n)}
-    })});
-  });
-  mo.observe(document.body,{childList:true,subtree:true});
-}
-if(typeof document!=='undefined'&&document.body)_watchPrivImgs();
-else document.addEventListener('DOMContentLoaded',_watchPrivImgs);
-
 function imgTag(src,extraAttrs){
   const extra=extraAttrs?(' '+extraAttrs):'';
-  if(isPrivImage(src)){
-    const path=src.slice(PRIV_PREFIX.length);
-    return '<img src="'+esc(PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'" data-priv="'+esc(path)+'"'+extra+'>';
-  }
   return '<img src="'+esc(src||PLACEHOLDER_IMG)+'" alt="" data-err data-ph="'+esc(PLACEHOLDER_IMG)+'"'+extra+'>';
 }
 
@@ -797,7 +715,7 @@ function switchProfile(){
 
 /* ==================== DEVICE PAIRING ==================== */
 function buildPairUrl(){
-  const payload={g:STATE.config.gistId||'',t:STATE.config.githubToken||'',k:STATE.config.geminiKey||'',i:STATE.config.imagesRepo||''};
+  const payload={g:STATE.config.gistId||'',t:STATE.config.githubToken||'',k:STATE.config.geminiKey||''};
   const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   const base=location.origin+location.pathname;
   return base+'#setup='+b64;
@@ -836,7 +754,6 @@ function tryParseSetupUrl(){
     if(p.g)STATE.config.gistId=p.g;
     if(p.t)STATE.config.githubToken=p.t;
     if(p.k)STATE.config.geminiKey=p.k;
-    if(p.i)STATE.config.imagesRepo=p.i;
     saveLocal();
     history.replaceState(null,'',location.pathname+location.search);
     return true;
@@ -933,7 +850,7 @@ async function fetchGist(id){
 }
 
 function buildPayload(){
-  return {version:GIST_VERSION,appVersion:APP_VERSION,users:STATE.users,sharedConfig:{geminiKey:STATE.config.geminiKey||'',imagesRepo:STATE.config.imagesRepo||''},updatedAt:Date.now()};
+  return {version:GIST_VERSION,appVersion:APP_VERSION,users:STATE.users,sharedConfig:{geminiKey:STATE.config.geminiKey||''},updatedAt:Date.now()};
 }
 
 async function createGist(){
@@ -953,8 +870,7 @@ async function updateGist(){
     if(remote&&remote.users){
       STATE.users=mergeUsers(STATE.users,remote.users);
       if(remote.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=remote.sharedConfig.geminiKey;
-      if(remote.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=remote.sharedConfig.imagesRepo;
-    }
+          }
   }catch(_){}
   const body={files:{[GIST_FILE]:{content:JSON.stringify(buildPayload(),null,2)}}};
   const r=await fetch('https://api.github.com/gists/'+STATE.config.gistId,{method:'PATCH',headers:{'Authorization':'token '+STATE.config.githubToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -972,7 +888,6 @@ async function pullGist(){
       if(data&&data.users){
         STATE.users=mergeUsers(STATE.users,data.users);
         if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
-        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
         saveLocal();
         return true;
       }
@@ -1050,7 +965,6 @@ async function saveTokenAndSync(){
         if(data&&data.users){
           STATE.users=mergeUsers(STATE.users,data.users);
           if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
-        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
           saveLocal();
         }
       }catch(_){}
@@ -1082,249 +996,6 @@ function saveGemini(){
   STATE.config.geminiKey=document.getElementById('cfgGemini').value.trim();
   saveLocal();
   toast('Clé Gemini enregistrée ✓','ok');
-}
-
-function saveImagesRepo(){
-  const v=document.getElementById('cfgImagesRepo').value.trim();
-  if(v&&!/^[\w.-]+\/[\w.-]+$/.test(v)){toast('Format attendu : owner/repo','err');return}
-  STATE.config.imagesRepo=v;
-  saveLocal();scheduleSync();
-  toast(v?('Repo images : '+v):'Repo images effacé','ok');
-}
-
-function _normName(s){return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')}
-
-function _detectLangFromPath(path){
-  if(!path)return null;
-  const m=path.match(/(?:^|[\\\/])(en|fr|jp|ja|de|es|it|pt|ko|ru|zhs|zht)(?=[\\\/])/i);
-  if(!m)return null;
-  let l=m[1].toLowerCase();
-  if(l==='jp')l='ja';
-  return l;
-}
-
-function _matchCardForFile(file,cards){
-  const fullPath=(typeof file==='string')?file:(file.webkitRelativePath||file.name||'');
-  const filename=fullPath.split(/[\\\/]/).pop();
-  const base=filename.replace(/\.[^.]+$/,'');
-  const k=_normName(base);
-  if(!k&&!fullPath)return null;
-  /* Langue détectée depuis le chemin (ex pokemon_cards/fr/...) */
-  const preferLang=_detectLangFromPath(fullPath);
-  /* Sous-ensemble dans la bonne langue (sinon toutes) */
-  const langSubset=preferLang?cards.filter(c=>(c.lang||'en')===preferLang):[];
-  const tryIn=arr=>{
-    /* 1. Match exact sur nom normalisé */
-    let c=arr.find(x=>_normName(x.name)===k);
-    if(c)return c;
-    /* 2. setCode + numéro (ex "A1a-001", "swsh1-001") */
-    const m=base.match(/([a-zA-Z0-9]+)[\s\-_]+(\d{1,4})/);
-    if(m){
-      const sc=_normName(m[1]);
-      const num=m[2].replace(/^0+/,'')||'0';
-      c=arr.find(x=>_normName(x.setCode||'')===sc&&(x.number||'').replace(/^0+/,'')===num);
-      if(c)return c;
-      c=arr.find(x=>_normName(x.set||'').includes(sc)&&(x.number||'').replace(/^0+/,'')===num);
-      if(c)return c;
-    }
-    /* 2b. setCode déduit du dossier parent (ex .../A1a_Mythical Island/A1a-001.png) */
-    const parts=fullPath.split(/[\\\/]/);
-    const parentDir=parts[parts.length-2]||'';
-    const dirSc=parentDir.split('_')[0];
-    if(dirSc){
-      const numFromName=base.match(/(\d{1,4})$/);
-      if(numFromName){
-        const sc=_normName(dirSc);
-        const num=numFromName[1].replace(/^0+/,'')||'0';
-        c=arr.find(x=>_normName(x.setCode||'')===sc&&(x.number||'').replace(/^0+/,'')===num);
-        if(c)return c;
-      }
-    }
-    /* 3. Numéro seul si unique */
-    const numOnly=base.match(/^0*(\d{1,4})$/);
-    if(numOnly){
-      const num=numOnly[1];
-      const matches=arr.filter(x=>(x.number||'').replace(/^0+/,'')===num);
-      if(matches.length===1)return matches[0];
-    }
-    /* 4. Sous-chaîne */
-    c=arr.find(x=>{const nx=_normName(x.name);return nx.length>=4&&k.includes(nx)});
-    if(c)return c;
-    return null;
-  };
-  /* Préférence : essayer la langue d'abord, puis fallback */
-  if(langSubset.length>0){
-    const r=tryIn(langSubset);
-    if(r)return r;
-  }
-  return tryIn(cards);
-}
-
-function openBatchUpload(){
-  if(!STATE.config.imagesRepo){toast('Configure d\'abord le repo images','err');return}
-  if(!STATE.config.githubToken){toast('Token GitHub manquant','err');return}
-  const u=getUser();
-  if(!u||!(u.cards||[]).length){toast('Aucune carte dans la collection','err');return}
-  openModal('📦 Upload en masse',
-    '<p class="muted mb-14">Choisis ton mode d\'import :</p>'
-    +'<button class="btn btn-violet btn-block mb-10" id="bu_dir">📁 Sélectionner un DOSSIER complet<div class="hint" style="color:rgba(255,255,255,.7);font-size:11px">Recommandé pour ta base pokemon_cards/ (langue détectée auto)</div></button>'
-    +'<button class="btn btn-ghost btn-block" id="bu_files">📄 Sélectionner des FICHIERS individuels<div class="hint" style="font-size:11px">Multi-sélection classique</div></button>',
-    ()=>{
-      const trigger=(asDir)=>{
-        const inp=document.createElement('input');
-        inp.type='file';inp.multiple=true;
-        if(asDir){inp.webkitdirectory=true;inp.directory=true}
-        else{inp.accept='image/*'}
-        inp.addEventListener('change',ev=>{
-          let files=Array.from(ev.target.files||[]);
-          /* Filtrer les images si mode dossier (sinon on a tout le contenu) */
-          if(asDir)files=files.filter(f=>/\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name));
-          closeModal();
-          if(files.length)reviewBatchUpload(files);
-          else toast('Aucune image trouvée','err');
-        });
-        inp.click();
-      };
-      document.getElementById('bu_dir').addEventListener('click',()=>trigger(true));
-      document.getElementById('bu_files').addEventListener('click',()=>trigger(false));
-    });
-}
-
-function _buildCardIndex(cards){
-  /* Pré-calcule les valeurs normalisées + lookup rapides */
-  const enriched=cards.map(c=>({c,lang:c.lang||'en',nName:_normName(c.name),nSc:_normName(c.setCode||''),nSet:_normName(c.set||''),num:(c.number||'').replace(/^0+/,'')||'0'}));
-  const scNumByLang=new Map();/* lang|sc|num → card */
-  const scNumAny=new Map();/* sc|num → card[] */
-  const nameByLang=new Map();/* lang|nName → card */
-  const numByLang=new Map();/* lang|num → card[] */
-  for(const e of enriched){
-    if(e.nSc&&e.c.number)scNumByLang.set(e.lang+'|'+e.nSc+'|'+e.num,e.c);
-    if(e.nSc&&e.c.number){const k=e.nSc+'|'+e.num;if(!scNumAny.has(k))scNumAny.set(k,[]);scNumAny.get(k).push(e.c)}
-    if(e.nName)nameByLang.set(e.lang+'|'+e.nName,e.c);
-    if(e.c.number){const k=e.lang+'|'+e.num;if(!numByLang.has(k))numByLang.set(k,[]);numByLang.get(k).push(e.c)}
-  }
-  return {enriched,scNumByLang,scNumAny,nameByLang,numByLang};
-}
-
-function _matchCardWithIndex(file,idx){
-  const fullPath=file.webkitRelativePath||file.name||'';
-  const filename=fullPath.split(/[\\\/]/).pop();
-  const base=filename.replace(/\.[^.]+$/,'');
-  const k=_normName(base);
-  const preferLang=_detectLangFromPath(fullPath)||'en';
-  /* 1. Nom exact dans la bonne langue */
-  if(k){const c=idx.nameByLang.get(preferLang+'|'+k);if(c)return c}
-  /* 2a. setCode-numéro depuis le filename */
-  const m=base.match(/([a-zA-Z0-9]+)[\s\-_]+(\d{1,4})/);
-  if(m){
-    const sc=_normName(m[1]);
-    const num=m[2].replace(/^0+/,'')||'0';
-    const c=idx.scNumByLang.get(preferLang+'|'+sc+'|'+num);
-    if(c)return c;
-  }
-  /* 2b. setCode depuis le dossier parent (ex .../A1a_Mythical Island/A1a-001.png) */
-  const parts=fullPath.split(/[\\\/]/);
-  const parent=parts[parts.length-2]||'';
-  const dirSc=_normName(parent.split('_')[0]||'');
-  const numFromName=base.match(/(\d{1,4})$/);
-  if(dirSc&&numFromName){
-    const num=numFromName[1].replace(/^0+/,'')||'0';
-    const c=idx.scNumByLang.get(preferLang+'|'+dirSc+'|'+num);
-    if(c)return c;
-  }
-  /* 3. Numéro seul, unique dans la langue */
-  const numOnly=base.match(/^0*(\d{1,4})$/);
-  if(numOnly){
-    const list=idx.numByLang.get(preferLang+'|'+numOnly[1])||[];
-    if(list.length===1)return list[0];
-  }
-  /* 4. Fallback inter-langue par setCode-numéro */
-  if(m){
-    const sc=_normName(m[1]);
-    const num=m[2].replace(/^0+/,'')||'0';
-    const list=idx.scNumAny.get(sc+'|'+num)||[];
-    if(list.length===1)return list[0];
-  }
-  if(dirSc&&numFromName){
-    const num=numFromName[1].replace(/^0+/,'')||'0';
-    const list=idx.scNumAny.get(dirSc+'|'+num)||[];
-    if(list.length===1)return list[0];
-  }
-  /* 5. Sous-chaîne (lent : seulement si nécessaire) */
-  if(k&&k.length>=4){
-    for(const e of idx.enriched){
-      if(e.nName.length>=4&&k.includes(e.nName))return e.c;
-    }
-  }
-  return null;
-}
-
-function reviewBatchUpload(files){
-  const u=getUser();const cards=u.cards||[];
-  const idx=_buildCardIndex(cards);
-  const matches=files.map(f=>({file:f,card:_matchCardWithIndex(f,idx)}));
-  const ok=matches.filter(m=>m.card);
-  const ko=matches.filter(m=>!m.card);
-  /* Détecter les doublons (plusieurs fichiers → même carte) */
-  const seen=new Map();
-  const dupCount={};
-  for(const m of ok){
-    const id=m.card.id;
-    seen.set(id,(seen.get(id)||0)+1);
-  }
-  Object.entries(Object.fromEntries(seen)).forEach(([id,n])=>{if(n>1)dupCount[id]=n});
-  const dupTotal=Object.keys(dupCount).length;
-  const html='<p class="muted mb-14">Sur <b>'+files.length+' fichiers</b> : '
-    +'<span class="chip chip-green">'+ok.length+' associés</span> '
-    +'<span class="chip chip-gold">'+ko.length+' sans match</span>'
-    +(dupTotal?' <span class="chip chip-violet">'+dupTotal+' cartes avec doublons</span>':'')+'</p>'
-    +(ko.length>0?'<details style="margin-bottom:10px"><summary class="muted" style="cursor:pointer">📋 Voir les '+ko.length+' fichiers sans correspondance</summary>'
-        +'<ul style="font-size:12px;color:var(--text-mute);max-height:200px;overflow:auto;padding-left:18px">'
-        +ko.slice(0,200).map(m=>'<li>'+esc(m.file.name)+'</li>').join('')
-        +(ko.length>200?'<li>… +'+(ko.length-200)+' autres</li>':'')+'</ul></details>':'')
-    +(dupTotal?'<div class="hint" style="color:#fbbf24">⚠️ Pour les cartes avec plusieurs fichiers, seul le dernier sera conservé.</div>':'')
-    +'<div class="hint">⏱️ ~1–2 secondes par fichier (compression + upload). Tu peux fermer la modale en cours, ça continue.</div>'
-    +'<div id="batch_progress" class="hint mt-10" style="font-weight:600"></div>'
-    +'<div class="row mt-10">'
-    +'<button class="btn btn-primary" id="batch_go"'+(ok.length===0?' disabled':'')+'>📤 Uploader '+ok.length+' visuels</button>'
-    +'<button class="btn btn-ghost" data-act="closeModal">Annuler</button>'
-    +'</div>';
-  openModal('📦 Import en masse',html,()=>{
-    const btn=document.getElementById('batch_go');
-    if(!btn)return;
-    btn.addEventListener('click',()=>runBatchUpload(ok));
-  });
-}
-
-let _batchInFlight=false;
-async function runBatchUpload(items){
-  if(_batchInFlight){toast('Un upload est déjà en cours','err');return}
-  _batchInFlight=true;
-  const btn=document.getElementById('batch_go');
-  if(btn){btn.disabled=true;btn.textContent='Upload en cours…'}
-  let done=0,fail=0;
-  const total=items.length;
-  const tick=()=>{
-    const p=document.getElementById('batch_progress');
-    if(p)p.textContent='Progression : '+done+'/'+total+' (échecs : '+fail+')';
-  };
-  tick();
-  for(const m of items){
-    try{
-      const ref=await uploadPrivateImage(m.file,m.card.id);
-      m.card.image=ref;touchCard(m.card);
-      done++;
-    }catch(e){
-      fail++;console.warn('Upload échec',m.file.name,e.message);
-    }
-    tick();
-    if((done+fail)%10===0){saveLocal()}
-  }
-  saveLocal();scheduleSync();
-  renderCollections();renderAllCards();
-  toast('Batch terminé : '+done+' OK, '+fail+' échec(s)',fail?'err':'ok');
-  _batchInFlight=false;
-  if(btn){btn.disabled=false;btn.textContent='✓ Terminé'}
 }
 
 function resetApp(){
@@ -1511,33 +1182,8 @@ function openCardDetail(cardId){
     +'<button class="btn btn-primary" data-act="saveCardChanges" data-args="'+esc(JSON.stringify([c.id]))+'">💾 Sauver</button>'
     +'<button class="btn btn-ghost" data-act="refreshPrice" data-args="'+esc(JSON.stringify([c.id]))+'">🔄 MAJ prix</button>'
     +'</div>'
-    +'<label class="btn btn-violet btn-block mt-10" style="cursor:pointer"><input type="file" accept="image/*" id="cd_img_in_'+c.id+'" style="display:none">📁 Importer un visuel personnel</label>'
-    +(isPrivImage(c.image)?'<button class="btn btn-ghost btn-block mt-10" data-act="removePrivateCardImage" data-args="'+esc(JSON.stringify([c.id]))+'">🗑️ Supprimer le visuel perso</button>':'')
     +'<button class="btn btn-danger btn-block mt-10" data-act="deleteCard" data-args="'+esc(JSON.stringify([c.id]))+'">🗑️ Supprimer</button>'
-    +'</div>',
-    ()=>{
-      const inp=document.getElementById('cd_img_in_'+c.id);
-      if(inp)inp.addEventListener('change',async ev=>{
-        const f=ev.target.files&&ev.target.files[0];if(!f)return;
-        try{
-          showLoader('Compression et upload…');
-          const ref=await uploadPrivateImage(f,c.id);
-          c.image=ref;c.lang=c.lang||'en';
-          touchCard(c);saveLocal();scheduleSync();
-          toast('Visuel personnel uploadé ✓','ok');
-          openCardDetail(c.id);
-        }catch(e){toast('Erreur upload: '+e.message,'err')}
-        finally{hideLoader()}
-      });
-    });
-}
-
-function removePrivateCardImage(id){
-  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
-  if(!confirm('Supprimer le visuel personnel ? La carte n\'aura plus d\'image (placeholder ou refetch via la recherche).'))return;
-  c.image='';touchCard(c);saveLocal();scheduleSync();
-  toast('Visuel perso retiré','ok');
-  openCardDetail(id);
+    +'</div>');
 }
 
 function adjQty(id,d){
@@ -2436,7 +2082,6 @@ function renderConfig(){
   document.getElementById('cfgToken').value=STATE.config.githubToken||'';
   document.getElementById('cfgGistId').value=STATE.config.gistId||'';
   document.getElementById('cfgGemini').value=STATE.config.geminiKey||'';
-  const ir=document.getElementById('cfgImagesRepo');if(ir)ir.value=STATE.config.imagesRepo||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
 }
 
@@ -2472,8 +2117,7 @@ registerActions({
   openNewCollection,openCollection,renameCollection,deleteCollection,exportCsv,
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
-  saveTokenAndSync,shareGistId,saveGemini,saveImagesRepo,resetApp,syncPull,openAddDevice,
-  removePrivateCardImage,openBatchUpload,
+  saveTokenAndSync,shareGistId,saveGemini,resetApp,syncPull,openAddDevice,
   switchView
 });
 
@@ -2518,7 +2162,6 @@ if(_paired){
       if(data&&data.users){
         STATE.users=mergeUsers(STATE.users||{},data.users);
         if(data.sharedConfig?.geminiKey&&!STATE.config.geminiKey)STATE.config.geminiKey=data.sharedConfig.geminiKey;
-        if(data.sharedConfig?.imagesRepo&&!STATE.config.imagesRepo)STATE.config.imagesRepo=data.sharedConfig.imagesRepo;
         saveLocal();
       }
     }catch(e){toast('Sync échoué: '+e.message,'err')}
