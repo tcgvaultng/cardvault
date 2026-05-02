@@ -285,12 +285,17 @@ img.err-hide{visibility:hidden}
       <div class="panel">
         <div class="panel-title">📷 Scanner caméra</div>
         <div class="row" style="gap:6px;margin-bottom:8px">
-          <label style="flex:0 0 auto;align-self:center;font-size:13px;color:#aaa">Jeu :</label>
           <select id="scanGame" style="flex:1">
-            <option value="auto">🎯 Auto (tous)</option>
+            <option value="auto">🎯 Tous jeux</option>
             <option value="pokemon">🐉 Pokémon</option>
             <option value="mtg">🃏 Magic</option>
             <option value="onepiece">🏴‍☠️ One Piece</option>
+          </select>
+          <select id="scanLang" style="flex:1">
+            <option value="auto">🌐 Toutes langues</option>
+            <option value="fr">🇫🇷 Français</option>
+            <option value="en">🇺🇸 Anglais</option>
+            <option value="ja">🇯🇵 Japonais</option>
           </select>
         </div>
         <div class="cam-wrap hidden" id="camWrap">
@@ -2799,11 +2804,16 @@ async function loadPhashDB(){
       try{await idbSet('phash_db',{keys,bytes,_cachedAt:Date.now()})}catch(_){}
     }
     const gameIdx={pokemon:[],mtg:[],onepiece:[],yugioh:[]};
+    const gameLangIdx={};
     for(let i=0;i<raw.keys.length;i++){
-      const g=raw.keys[i].split('|',1)[0];
+      const parts=raw.keys[i].split('|',2);
+      const g=parts[0],l=parts[1];
       if(gameIdx[g])gameIdx[g].push(i);
+      const gl=g+'|'+l;
+      if(!gameLangIdx[gl])gameLangIdx[gl]=[];
+      gameLangIdx[gl].push(i);
     }
-    _phashDB={keys:raw.keys,bytes:raw.bytes,gameIdx,size:raw.keys.length};
+    _phashDB={keys:raw.keys,bytes:raw.bytes,gameIdx,gameLangIdx,size:raw.keys.length};
     _phashDBPromise=null;
     return _phashDB;
   })();
@@ -2861,15 +2871,28 @@ function findNearestPhash(queryHex,opts){
   const o=opts||{};
   const topN=o.topN||10;
   const games=o.games||null;
+  const langs=o.langs||null;
   const db=_phashDB;
   if(!db)throw new Error('phash DB not loaded');
   const qb=new Uint8Array(8);
   for(let i=0;i<8;i++)qb[i]=parseInt(queryHex.slice(i*2,i*2+2),16);
   const bytes=db.bytes;const keys=db.keys;
   let indices=null;
-  if(games&&games.length){
+  if(games&&games.length&&langs&&langs.length){
+    indices=[];
+    for(const g of games)for(const l of langs){
+      const ix=db.gameLangIdx[g+'|'+l];
+      if(ix)indices=indices.concat(ix);
+    }
+  } else if(games&&games.length){
     indices=[];
     for(const g of games)if(db.gameIdx[g])indices=indices.concat(db.gameIdx[g]);
+  } else if(langs&&langs.length){
+    indices=[];
+    for(const k in db.gameLangIdx){
+      const l=k.split('|',2)[1];
+      if(langs.indexOf(l)>=0)indices=indices.concat(db.gameLangIdx[k]);
+    }
   }
   const total=indices?indices.length:keys.length;
   const best=[];
@@ -2963,13 +2986,25 @@ async function captureCardOffline(){
     }
     box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">Identification offline…</span></div>';
     const queryHex=computePhash(canvas);
-    /* Filtre par jeu si sélectionné */
+    /* Filtres jeu et langue (réduit drastiquement les faux positifs) */
     const scanGame=document.getElementById('scanGame')?.value||'auto';
+    const scanLang=document.getElementById('scanLang')?.value||'auto';
     const opts={topN:10};
     if(scanGame!=='auto')opts.games=[scanGame];
+    if(scanLang!=='auto')opts.langs=[scanLang];
     const t0=performance.now();
     const matches=findNearestPhash(queryHex,opts);
     const dt=Math.round(performance.now()-t0);
+    /* Calcule la taille du subset filtré pour le header */
+    let filteredSize=_phashDB.size;
+    if(scanGame!=='auto'&&scanLang!=='auto'){
+      filteredSize=(_phashDB.gameLangIdx[scanGame+'|'+scanLang]||[]).length;
+    } else if(scanGame!=='auto'){
+      filteredSize=_phashDB.gameIdx[scanGame].length;
+    } else if(scanLang!=='auto'){
+      filteredSize=0;
+      for(const k in _phashDB.gameLangIdx)if(k.split('|',2)[1]===scanLang)filteredSize+=_phashDB.gameLangIdx[k].length;
+    }
     if(!matches.length){
       box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Aucune correspondance</h3><p class="muted">DB pas chargée ou jeu vide.</p></div>';
       return;
@@ -3032,7 +3067,7 @@ async function captureCardOffline(){
       +'<img src="'+previewUrl+'" style="width:60px;height:auto;border-radius:6px;border:1px solid rgba(255,255,255,.1)" alt="scan">'
       +'<div>'
       +'<div style="font-family:\'Cinzel\',serif;font-size:14px">📸 Scan offline</div>'
-      +'<div class="muted" style="font-size:11px">'+matches.length+' match(s)/'+(scanGame==='auto'?_phashDB.size:_phashDB.gameIdx[scanGame].length).toLocaleString()+' • '+dt+' ms • d_min='+bestD+'</div></div>'
+      +'<div class="muted" style="font-size:11px">'+matches.length+' match(s)/'+filteredSize.toLocaleString()+' • '+dt+' ms • d_min='+bestD+'</div></div>'
       +'</div>'
       +'<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff;flex-shrink:0">pHash</span></div>'
       +(bestD>22?'<div class="hint" style="background:rgba(255,150,150,.1);padding:6px 8px;border-radius:6px;margin-bottom:8px">⚠️ Confiance faible. Recadre la carte dans le rectangle doré, ou essaie ✨ IA.</div>':'')
