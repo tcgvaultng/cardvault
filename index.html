@@ -1776,7 +1776,7 @@ function switchView(name){
 /* ==================== GIST SYNC (v6 — merge par timestamp) ==================== */
 const GIST_FILE='cardvault.json';
 const GIST_VERSION=6;
-const APP_VERSION='2.2.0';
+const APP_VERSION='2.3.0';
 const SYNC_INTERVAL_MS=20000;
 let _pullInFlight=null;
 let _lastSyncAt=0;
@@ -2738,27 +2738,42 @@ function _openMoveModal(ids){
 }
 
 function confirmMove(targetId,ids){
-  const u=getUser();if(!u)return;
-  /* Mémorise la collection source pour réouvrir après le move */
+  const u=getUser();if(!u){console.warn('[move] no user');return}
+  if(!Array.isArray(ids))ids=[ids];
+  /* Mémorise la collection source AVANT le close (closeModal peut reset le tracker) */
   const sourceCollectionId=_currentOpenCollection;
-  let n=0;
   const targetColl=(u.collections||[]).find(c=>c.id===targetId);
+  if(!targetColl){toast('Collection cible introuvable','err');return}
+  let n=0;const movedCards=[];
   for(const id of ids){
     const c=(u.cards||[]).find(x=>x.id===id);
-    if(c&&c.collectionId!==targetId){c.collectionId=targetId;touchCard(c);n++}
+    if(!c){console.warn('[move] card not found:',id);continue}
+    if(c.collectionId===targetId){console.log('[move] same collection, skip:',id);continue}
+    c.collectionId=targetId;
+    c.updatedAt=Date.now();
+    movedCards.push(c);
+    n++;
   }
+  if(n===0){toast('Aucune carte à déplacer (déjà dans la cible)','err');closeModal();return}
+  touchActiveUser();
   if(_cardsSelection&&_cardsSelection.has)_cardsSelection.clear();
+  /* Sauvegarde IMMÉDIATE (synchrone) avant tout re-render */
   saveLocal();scheduleSync();
   closeModal();
-  renderCollections();renderAllCards();
-  /* Si l'utilisateur était dans la collection source, on la rouvre pour qu'il
-     voie que la carte n'y est plus. Sinon on ferme juste la modal. */
+  /* Force re-render synchrone de toutes les vues */
+  renderCollections();
+  renderAllCards();
+  /* Réouvre la collection source si on y était (sinon le user voit pas le résultat) */
   if(sourceCollectionId&&sourceCollectionId!==targetId){
-    setTimeout(()=>openCollection(sourceCollectionId),50);
+    /* Force un refresh fresh : reset tracker puis re-set via openCollection */
+    _currentOpenCollection=null;
+    setTimeout(()=>{
+      openCollection(sourceCollectionId);
+    },80);
   } else {
     _currentOpenCollection=null;
   }
-  toast(n+' carte(s) déplacée(s) → '+esc(targetColl?.name||'…')+' ✓','ok');
+  toast(n+' carte'+(n>1?'s':'')+' → '+esc(targetColl.name)+' ✓','ok');
 }
 
 function bulkExport(){
