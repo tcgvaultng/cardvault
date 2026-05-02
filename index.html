@@ -1899,10 +1899,32 @@ async function refreshAllPrices(){
   if(_bulkPriceInFlight){toast('MAJ déjà en cours','err');return}
   const u=getUser();
   if(!u||!u.cards||!u.cards.length){toast('Aucune carte','err');return}
-  if(!confirm('Mettre à jour les prix de '+u.cards.length+' cartes via Scryfall/pokemontcg.io ?\n\nCardmarket EUR pour MTG, Cardmarket EUR pour Pokemon EN, prix non dispo pour One Piece.\n\nDurée : ~'+Math.ceil(u.cards.length/4)+'s.'))return;
+  if(!confirm('Mettre à jour les prix de '+u.cards.length+' cartes ?\n\nDurée : ~'+Math.ceil(u.cards.length/4)+'s.'))return;
   _bulkPriceInFlight=true;
   showLoader('Préparation…');
   try{
+    /* Phase 0: derive setCode/number depuis cardId/image pour les vieilles cartes */
+    const isBlank=v=>!v||v==='undefined'||v==='null';
+    const cardIdFromImg=url=>{
+      if(!url)return '';
+      const m=String(url).match(/\/([^\/]+)\.(?:webp|png|jpg|jpeg)(?:\?|$)/i);
+      return m?decodeURIComponent(m[1]):'';
+    };
+    let derived=0;
+    for(const c of u.cards){
+      if(!isBlank(c.setCode)&&!isBlank(c.number))continue;
+      let cid=_libCardIdFor(c);
+      if(isBlank(cid))cid=cardIdFromImg(c.image);
+      if(isBlank(cid))continue;
+      const m=String(cid).match(/^(.+)-([A-Za-z0-9_]+)$/);
+      if(m){
+        if(isBlank(c.setCode)){c.setCode=m[1];derived++}
+        if(isBlank(c.number)){c.number=m[2];derived++}
+        const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[c.game]||'_pokeId';
+        if(isBlank(c[idField]))c[idField]=cid;
+      }
+    }
+    if(derived>0){console.log('[refresh] '+derived+' champs setCode/number derives');saveLocal()}
     /* Concurrence limitee a 4 (eviter rate limits Scryfall/pokemontcg.io) */
     const cards=u.cards.slice();
     let done=0,updated=0,fail=0;
