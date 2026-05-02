@@ -2300,7 +2300,7 @@ function renderCardRow(c,opts){
   const qty=c.quantity||1;
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
   const moveBtn=opts.movable!==false?'<button type="button" class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection">📁</button>':'';
-  const qtyPill=qty>1?'<span class="qty-pill qty-multi" title="'+qty+' exemplaires">×'+qty+'</span>':'';
+  const qtyPill=qty>1?'<span class="qty-pill qty-multi" title="'+qty+' exemplaires">'+qty+'</span>':'';
   return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
@@ -2600,7 +2600,7 @@ function renderGalleryCard(c){
   const img=c.image
     ? '<img src="'+esc(c.image)+'" loading="lazy" alt="'+esc(c.name)+'" onerror="this.classList.add(\'err-hide\')">'
     : '<div class="placeholder">🃏</div>';
-  const qty=(c.quantity||1)>1?'<span class="qty-badge">×'+(c.quantity||1)+'</span>':'';
+  const qty=(c.quantity||1)>1?'<span class="qty-badge">'+(c.quantity||1)+'</span>':'';
   const price=c.price!=null?'<span class="price-badge">'+fmtEur(c.price)+'</span>':'';
   const foil=c.foil?'<span class="foil-badge">✨ FOIL</span>':'';
   const dot='<span class="game-dot" style="background:'+g.color+'" title="'+esc(g.name)+'"></span>';
