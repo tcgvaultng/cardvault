@@ -2343,6 +2343,8 @@ function chooseCollectionAndAdd(card){
   }
   // Clone pour permettre modifs locales (langue/visuel) avant ajout
   const draft={...card,lang:card.lang||'en'};
+  /* Verso si carte double-face */
+  draft._backUrl=draft.imageBack||libraryBackUrlFor(draft.game,draft.lang,_libCardIdFor(draft));
   const opts=u.collections.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
   const supportsLang=(draft.game==='mtg'||draft.game==='yugioh');
   const langOpts=Object.entries(LANGS).map(([k,L])=>{
@@ -2353,7 +2355,10 @@ function chooseCollectionAndAdd(card){
     openModal('Ajouter à une collection',
       '<div class="card-detail">'
       +'<div id="add_preview">'
+      +'<div id="addImgWrap" data-front="'+esc(draft.image||'')+'" data-back="'+esc(draft._backUrl||'')+'" data-side="front" style="text-align:center">'
       +imgTag(draft.image,'style="max-width:180px"')
+      +'</div>'
+      +(draft._backUrl?'<button class="btn btn-ghost btn-sm btn-block mt-10" data-act="flipAddImage">↻ Retourner la carte</button>':'')
       +'<div style="text-align:center" class="mb-14">'
       +'<div style="font-family:\'Cinzel\',serif;font-size:18px">'+esc(draft.printedName||draft.name)+'</div>'
       +'<div class="muted">'+esc(draft.set||'')+' • '+fmtEur(draft.price)+'</div></div>'
@@ -2772,6 +2777,15 @@ function flipCardImage(){
   const img=wrap.querySelector('img');
   if(img){img.src=url;wrap.dataset.side=side}
 }
+function flipAddImage(){
+  const wrap=document.getElementById('addImgWrap');
+  if(!wrap)return;
+  const side=wrap.dataset.side==='front'?'back':'front';
+  const url=wrap.dataset[side];
+  if(!url)return;
+  const img=wrap.querySelector('img');
+  if(img){img.src=url;wrap.dataset.side=side}
+}
 function browsePickCard(idx){
   const c=_browseCardCache[idx];
   if(!c)return;
@@ -2940,7 +2954,7 @@ registerActions({
   openCardDetail,adjQty,saveCardChanges,refreshPrice,deleteCard,changeCardLanguage,
   doSearch,pickSearchResult,pickScanResult,
   saveTokenAndSync,shareGistId,saveGemini,saveR2Config,openManualAdd,openManualList,editManualCard,resetApp,syncPull,openAddDevice,refreshLibraryAndCollection,forceFullReload,
-  browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,
+  browseOpenSet,browseBack,browsePickCard,browseFilterMode,browseToggleHighlight,flipCardImage,flipAddImage,
   switchView
 });
 
