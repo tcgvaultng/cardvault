@@ -308,7 +308,13 @@ img.err-hide{visibility:hidden}
           <button class="btn btn-violet" id="btnCapture" disabled>📸 Offline</button>
           <button class="btn btn-ghost" id="btnCaptureAI" disabled>✨ IA</button>
         </div>
-        <div class="hint">📸 <b>Offline</b> = pHash local (gratuit, sans API). Sélectionne le jeu pour limiter aux ~52K cartes du jeu.&nbsp;&nbsp;✨ <b>IA</b> = Gemini.</div>
+        <div class="row" style="gap:8px;margin-top:6px;align-items:center">
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#aaa;cursor:pointer">
+            <input type="checkbox" id="scanSmart" checked style="margin:0">
+            <span>🧠 Mode précis (OpenCV redresse + OCR confirme)</span>
+          </label>
+        </div>
+        <div class="hint">📸 <b>Offline</b> = pHash local + OCR (mode précis). 1er scan : ~15 MB DL (puis cache).&nbsp;&nbsp;✨ <b>IA</b> = Gemini.</div>
         <div id="scanResult" class="mt-10"></div>
       </div>
 
@@ -2945,6 +2951,202 @@ function _resolveCardFromPhashKey(phashKey,preferredLang){
   return null;
 }
 
+/* ---------- Lazy-load deps (OpenCV + Tesseract) ---------- */
+const _scriptCache={};
+function loadScript(url){
+  if(_scriptCache[url])return _scriptCache[url];
+  _scriptCache[url]=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=url;s.async=true;
+    s.onload=()=>res();
+    s.onerror=()=>{delete _scriptCache[url];rej(new Error('Failed: '+url))};
+    document.head.appendChild(s);
+  });
+  return _scriptCache[url];
+}
+
+let _cvReady=null;
+async function loadOpenCV(){
+  if(window.cv&&window.cv.Mat)return window.cv;
+  if(_cvReady)return _cvReady;
+  _cvReady=(async()=>{
+    await loadScript('https://docs.opencv.org/4.10.0/opencv.js');
+    /* OpenCV.js a besoin d'un wait sur onRuntimeInitialized */
+    if(window.cv&&window.cv.Mat)return window.cv;
+    await new Promise(res=>{
+      const check=()=>{
+        if(window.cv&&window.cv.Mat)return res();
+        window.cv['onRuntimeInitialized']=res;
+        setTimeout(()=>{if(window.cv&&window.cv.Mat)res()},100);
+      };
+      check();
+    });
+    return window.cv;
+  })();
+  return _cvReady;
+}
+
+let _tessReady=null;
+async function loadTesseract(){
+  if(window.Tesseract)return window.Tesseract;
+  if(_tessReady)return _tessReady;
+  _tessReady=(async()=>{
+    await loadScript('https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js');
+    return window.Tesseract;
+  })();
+  return _tessReady;
+}
+
+/* ---------- Perspective correction (OpenCV) ---------- */
+function _orderCornersTLBR(corners){
+  const bySum=[...corners].sort((a,b)=>(a.x+a.y)-(b.x+b.y));
+  const tl=bySum[0],br=bySum[3];
+  const others=corners.filter(c=>c!==tl&&c!==br);
+  others.sort((a,b)=>(a.x-a.y)-(b.x-b.y));
+  return [tl,others[1],br,others[0]]; /* tl, tr, br, bl */
+}
+
+async function rectifyCardCV(srcCanvas){
+  const cv=await loadOpenCV();
+  const src=cv.imread(srcCanvas);
+  const gray=new cv.Mat();
+  const blurred=new cv.Mat();
+  const edges=new cv.Mat();
+  const dilated=new cv.Mat();
+  const contours=new cv.MatVector();
+  const hierarchy=new cv.Mat();
+  let result=null;
+  let bestQuad=null;
+  try{
+    cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray,blurred,new cv.Size(5,5),0);
+    cv.Canny(blurred,edges,50,150);
+    const kernel=cv.Mat.ones(3,3,cv.CV_8U);
+    cv.dilate(edges,dilated,kernel);
+    kernel.delete();
+    cv.findContours(dilated,contours,hierarchy,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);
+    const minArea=srcCanvas.width*srcCanvas.height*0.15;
+    let bestArea=0;
+    for(let i=0;i<contours.size();i++){
+      const c=contours.get(i);
+      const area=cv.contourArea(c);
+      if(area<minArea){c.delete();continue}
+      const peri=cv.arcLength(c,true);
+      const approx=new cv.Mat();
+      cv.approxPolyDP(c,approx,0.02*peri,true);
+      if(approx.rows===4&&area>bestArea){
+        if(bestQuad)bestQuad.delete();
+        bestQuad=approx;
+        bestArea=area;
+      } else approx.delete();
+      c.delete();
+    }
+    if(!bestQuad)return null;
+    const corners=[];
+    for(let i=0;i<4;i++){const p=bestQuad.intPtr(i);corners.push({x:p[0],y:p[1]})}
+    const o=_orderCornersTLBR(corners);
+    const w1=Math.hypot(o[1].x-o[0].x,o[1].y-o[0].y);
+    const w2=Math.hypot(o[2].x-o[3].x,o[2].y-o[3].y);
+    const h1=Math.hypot(o[3].x-o[0].x,o[3].y-o[0].y);
+    const h2=Math.hypot(o[2].x-o[1].x,o[2].y-o[1].y);
+    let outW=Math.round(Math.max(w1,w2));
+    let outH=Math.round(Math.max(h1,h2));
+    /* Force ratio carte typique 5:7 (≈0.71) si trop déformé */
+    const ar=outW/outH;
+    if(ar>0.85)outH=Math.round(outW/0.71);
+    else if(ar<0.55)outW=Math.round(outH*0.71);
+    const srcQuad=cv.matFromArray(4,1,cv.CV_32FC2,[o[0].x,o[0].y,o[1].x,o[1].y,o[2].x,o[2].y,o[3].x,o[3].y]);
+    const dstQuad=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,outW,0,outW,outH,0,outH]);
+    const M=cv.getPerspectiveTransform(srcQuad,dstQuad);
+    const dst=new cv.Mat();
+    cv.warpPerspective(src,dst,M,new cv.Size(outW,outH));
+    result=document.createElement('canvas');
+    result.width=outW;result.height=outH;
+    cv.imshow(result,dst);
+    srcQuad.delete();dstQuad.delete();M.delete();dst.delete();
+  } catch(e){console.warn('rectifyCardCV error:',e)}
+  finally{
+    src.delete();gray.delete();blurred.delete();edges.delete();dilated.delete();
+    contours.delete();hierarchy.delete();
+    if(bestQuad)bestQuad.delete();
+  }
+  return result;
+}
+
+/* ---------- OCR (Tesseract) ---------- */
+let _tessWorker=null;
+async function ocrCardBottom(srcCanvas){
+  const T=await loadTesseract();
+  if(!_tessWorker){
+    _tessWorker=await T.createWorker('eng');
+    await _tessWorker.setParameters({
+      tessedit_char_whitelist:'0123456789/-ABCDEFGHIJKLMNOPQRSTUVWXYZ ',
+      tessedit_pageseg_mode:'7', /* single line mode */
+    });
+  }
+  /* Extrait le bas (~18 % en bas, ~25 % côté gauche pour MTG) - on prend la zone
+     numéro de collection. Pour Pokemon c'est en bas centre, MTG en bas gauche, OP en bas. */
+  const w=srcCanvas.width,h=srcCanvas.height;
+  const cropY=Math.round(h*0.82);
+  const cropH=Math.round(h*0.18);
+  const cropped=document.createElement('canvas');
+  cropped.width=w;cropped.height=cropH;
+  const ctx=cropped.getContext('2d');
+  ctx.drawImage(srcCanvas,0,cropY,w,cropH,0,0,w,cropH);
+  /* Augmente le contraste pour aider l'OCR */
+  const id=ctx.getImageData(0,0,w,cropH);
+  const d=id.data;
+  for(let i=0;i<d.length;i+=4){
+    const lum=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+    const v=lum>128?255:0; /* threshold */
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(id,0,0);
+  const r=await _tessWorker.recognize(cropped);
+  return r.data.text||'';
+}
+
+function parseCollectorNumber(ocrText){
+  if(!ocrText)return null;
+  const T=ocrText.replace(/[^\w\s\/\-\.]/g,' ').replace(/\s+/g,' ').toUpperCase().trim();
+  /* Patterns par jeu */
+  /* MTG/Pokemon "327/411" ou "1/102" */
+  let m=T.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
+  if(m){
+    const num=parseInt(m[1]);
+    /* Cherche un set code à proximité : 2-5 lettres */
+    const setM=T.match(/\b([A-Z]{2,5})\b/);
+    return {number:num,total:parseInt(m[2]),setCode:setM?setM[1].toLowerCase():null};
+  }
+  /* One Piece "OP01-001", "EB01-002" */
+  m=T.match(/\b([A-Z]{2,4}\d{1,2})\s*-\s*(\d{1,4})\b/);
+  if(m)return {number:parseInt(m[2]),setCode:m[1].toLowerCase()};
+  /* MTG juste "INR 327" */
+  m=T.match(/\b([A-Z]{2,5})\b\D{0,5}(\d{1,4})\b/);
+  if(m)return {number:parseInt(m[2]),setCode:m[1].toLowerCase()};
+  return null;
+}
+
+function _ocrMatchesCardKey(phashKey,ocr){
+  if(!ocr)return false;
+  /* phashKey = "game|lang|setcode-number" */
+  const cardId=phashKey.split('|',3)[2];
+  if(!cardId)return false;
+  const m=cardId.match(/^(.+?)-(.+)$/);
+  if(!m)return false;
+  const set=m[1].toLowerCase(),num=m[2];
+  /* Matche numéro */
+  if(ocr.number!=null){
+    const cardNum=parseInt(num.replace(/\D/g,''));
+    if(!isNaN(cardNum)&&cardNum!==ocr.number)return false;
+  }
+  /* Matche set code (si OCR détecté) */
+  if(ocr.setCode){
+    if(set!==ocr.setCode&&!set.startsWith(ocr.setCode)&&!ocr.setCode.startsWith(set))return false;
+  }
+  return true;
+}
+
 /* Calcule le rectangle (en coords video) qui correspond au cam-overlay (zone pointillée doré).
    Necessaire car video uses object-fit:cover, donc une partie est crop par le navigateur. */
 function _videoCropFromOverlay(video){
@@ -2982,51 +3184,70 @@ async function captureCardOffline(){
   const canvas=document.getElementById('camCanvas');
   const vw=video.videoWidth,vh=video.videoHeight;
   if(!vw||!vh){toast('Caméra non prête','err');return}
-  /* Capture la zone overlay (rectangle pointillé doré) - precise mapping wrap → video */
-  const crop=_videoCropFromOverlay(video);
-  canvas.width=crop.w;canvas.height=crop.h;
-  canvas.getContext('2d').drawImage(video,crop.x,crop.y,crop.w,crop.h,0,0,crop.w,crop.h);
-  /* Construit un dataURL de preview (petit) pour debug visuel */
-  const previewCanvas=document.createElement('canvas');
-  previewCanvas.width=Math.min(140,crop.w);
-  previewCanvas.height=Math.round(previewCanvas.width*crop.h/crop.w);
-  previewCanvas.getContext('2d').drawImage(canvas,0,0,previewCanvas.width,previewCanvas.height);
-  const previewUrl=previewCanvas.toDataURL('image/jpeg',0.7);
   const box=document.getElementById('scanResult');
+  const setStep=msg=>{box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">'+esc(msg)+'</span></div>';};
+  const smartMode=document.getElementById('scanSmart')?.checked!==false; /* default true */
   try{
+    /* 1) Capture overlay region */
+    setStep('📸 Capture…');
+    const crop=_videoCropFromOverlay(video);
+    canvas.width=crop.w;canvas.height=crop.h;
+    canvas.getContext('2d').drawImage(video,crop.x,crop.y,crop.w,crop.h,0,0,crop.w,crop.h);
+    /* 2) Charge la base pHash si pas encore */
     if(!_phashDB){
-      box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">Chargement base pHash (~3 MB, premiere fois)…</span></div>';
+      setStep('⏳ Chargement base pHash (~3 MB)…');
       await loadPhashDB();
     }
-    box.innerHTML='<div class="flex" style="justify-content:center;padding:16px"><div class="spinner"></div><span style="margin-left:8px">Identification offline…</span></div>';
-    const queryHex=computePhash(canvas);
-    /* Filtres jeu et langue (réduit drastiquement les faux positifs) */
+    /* 3) Mode smart : redresse la carte avec OpenCV */
+    let workCanvas=canvas;
+    let didRectify=false;
+    if(smartMode){
+      try{
+        setStep('🔄 Détection bords carte (OpenCV)…');
+        const rect=await rectifyCardCV(canvas);
+        if(rect){workCanvas=rect;didRectify=true}
+      }catch(e){console.warn('rectify failed:',e)}
+    }
+    /* 4) Calcule pHash + lance OCR en parallèle */
+    setStep(smartMode?'🔬 Analyse pHash + OCR (Tesseract)…':'🔬 Calcul pHash…');
+    const queryHex=computePhash(workCanvas);
+    let ocrPromise=null;
+    if(smartMode){
+      ocrPromise=ocrCardBottom(workCanvas).catch(e=>{console.warn('OCR failed:',e);return ''});
+    }
+    /* 5) Filtres jeu/langue */
     const scanGame=document.getElementById('scanGame')?.value||'auto';
     const scanLang=document.getElementById('scanLang')?.value||'auto';
-    const opts={topN:10};
+    const opts={topN:25};
     if(scanGame!=='auto')opts.games=[scanGame];
     if(scanLang!=='auto')opts.langs=[scanLang];
     const t0=performance.now();
-    const matches=findNearestPhash(queryHex,opts);
-    const dt=Math.round(performance.now()-t0);
-    /* Calcule la taille du subset filtré pour le header */
+    let matches=findNearestPhash(queryHex,opts);
+    const phashDt=Math.round(performance.now()-t0);
     let filteredSize=_phashDB.size;
-    if(scanGame!=='auto'&&scanLang!=='auto'){
-      filteredSize=(_phashDB.gameLangIdx[scanGame+'|'+scanLang]||[]).length;
-    } else if(scanGame!=='auto'){
-      filteredSize=_phashDB.gameIdx[scanGame].length;
-    } else if(scanLang!=='auto'){
-      filteredSize=0;
-      for(const k in _phashDB.gameLangIdx)if(k.split('|',2)[1]===scanLang)filteredSize+=_phashDB.gameLangIdx[k].length;
-    }
+    if(scanGame!=='auto'&&scanLang!=='auto')filteredSize=(_phashDB.gameLangIdx[scanGame+'|'+scanLang]||[]).length;
+    else if(scanGame!=='auto')filteredSize=_phashDB.gameIdx[scanGame].length;
+    else if(scanLang!=='auto'){filteredSize=0;for(const k in _phashDB.gameLangIdx)if(k.split('|',2)[1]===scanLang)filteredSize+=_phashDB.gameLangIdx[k].length;}
     if(!matches.length){
       box.innerHTML='<div class="empty"><div class="ic">🤔</div><h3>Aucune correspondance</h3><p class="muted">DB pas chargée ou jeu vide.</p></div>';
       return;
     }
+    /* 6) OCR : narrow-down les matches qui correspondent au numéro de collection */
+    let ocrInfo=null,ocrText='';
+    let ocrFiltered=false;
+    if(ocrPromise){
+      ocrText=await ocrPromise;
+      ocrInfo=parseCollectorNumber(ocrText);
+      if(ocrInfo){
+        const filtered=matches.filter(m=>_ocrMatchesCardKey(m.key,ocrInfo));
+        if(filtered.length){matches=filtered;ocrFiltered=true}
+      }
+    }
+    /* 7) Construit les cartes depuis le manifest */
     await loadLibraryManifest();
     const lang=(scanLang&&scanLang!=='auto')?scanLang:(document.getElementById('searchLang')?.value||'fr');
     const cards=[];
-    for(const m of matches){
+    for(const m of matches.slice(0,10)){
       const resolved=_resolveCardFromPhashKey(m.key,lang)||{game:m.key.split('|',1)[0],cardId:m.key.split('|',3)[2],entry:null};
       const game=resolved.game;
       const cardId=resolved.cardId;
@@ -3045,10 +3266,10 @@ async function captureCardOffline(){
       }
       cards.push(c);
     }
-    /* Cherche prix sur la 1ere via API si confiance ok */
+    /* 8) Cherche prix sur la 1ere */
     try{
       const top=cards[0];
-      if(top._phashDist<=18&&top.name&&top.name!==top._phashKey.split('|',3)[2]){
+      if((ocrFiltered||top._phashDist<=18)&&top.name&&top.name!==top._phashKey.split('|',3)[2]){
         const apiRes=await searchCards(top.game,top.name,lang,5);
         const apiMatch=apiRes.find(r=>r.setCode&&top.setCode&&String(r.setCode).toLowerCase()===String(top.setCode).toLowerCase()&&String(r.number)===String(top.number))||apiRes[0];
         if(apiMatch&&apiMatch.price!=null){
@@ -3062,29 +3283,42 @@ async function captureCardOffline(){
     const manual={id:uid(),name:'Saisie manuelle',game:cards[0].game,set:'',image:'',price:null,_noPrice:true};
     _scanCache.push(manual);
     const manualIdx=_scanCache.length-1;
-    /* Confidence selon distance */
-    const confLabel=d=>d<=4?'<span style="color:#5cd17e">≈99%</span>':d<=8?'<span style="color:#9be07e">≈95%</span>':d<=14?'<span style="color:#e0c87e">≈80%</span>':d<=22?'<span style="color:#e09e7e">≈60%</span>':'<span style="color:#e07e7e">douteux</span>';
+    /* Preview de la zone scannée (rectifiée si OpenCV) */
+    const previewCanvas=document.createElement('canvas');
+    previewCanvas.width=Math.min(140,workCanvas.width);
+    previewCanvas.height=Math.round(previewCanvas.width*workCanvas.height/workCanvas.width);
+    previewCanvas.getContext('2d').drawImage(workCanvas,0,0,previewCanvas.width,previewCanvas.height);
+    const previewUrl=previewCanvas.toDataURL('image/jpeg',0.7);
+    /* Confidence boost si OCR a confirmé */
+    const confLabel=(d,verified)=>{
+      if(verified)return '<span style="color:#5cd17e">✓ confirmé OCR</span>';
+      return d<=4?'<span style="color:#5cd17e">≈99%</span>':d<=8?'<span style="color:#9be07e">≈95%</span>':d<=14?'<span style="color:#e0c87e">≈80%</span>':d<=22?'<span style="color:#e09e7e">≈60%</span>':'<span style="color:#e07e7e">douteux</span>';
+    };
     const inner=cards.map((c,i)=>{
       const g=GAMES[c.game]||{};
       return '<div class="card-row" data-act="pickScanResult" data-args="'+esc(JSON.stringify([i]))+'">'
         +imgTag(c.image)
         +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
-        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • d='+c._phashDist+' '+confLabel(c._phashDist)+'</div></div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • d='+c._phashDist+' '+confLabel(c._phashDist,ocrFiltered&&i===0)+'</div></div>'
         +'<div class="price">'+fmtEur(c.price)+'</div></div>';
     }).join('')
     +'<div class="muted text-center mt-10"><a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Aucun ne correspond ? Ajouter manuellement</a></div>';
     const bestD=matches[0].distance;
-    const headerColor=bestD<=14?'rgba(120,255,180,.1)':bestD<=22?'rgba(255,200,120,.1)':'rgba(255,120,120,.1)';
+    const headerColor=ocrFiltered?'rgba(120,255,180,.15)':bestD<=14?'rgba(120,255,180,.1)':bestD<=22?'rgba(255,200,120,.1)':'rgba(255,120,120,.1)';
+    const tags=[];
+    tags.push('<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff;flex-shrink:0">pHash</span>');
+    if(didRectify)tags.push('<span class="chip" style="background:rgba(180,120,255,.2);color:#c08eff;flex-shrink:0">CV redressé</span>');
+    if(ocrFiltered)tags.push('<span class="chip" style="background:rgba(120,255,180,.2);color:#7eff9b;flex-shrink:0">OCR ✓</span>');
     box.innerHTML='<div class="panel" style="margin-bottom:0;background:'+headerColor+'">'
       +'<div class="flex-between mb-10">'
       +'<div style="display:flex;gap:10px;align-items:center">'
       +'<img src="'+previewUrl+'" style="width:60px;height:auto;border-radius:6px;border:1px solid rgba(255,255,255,.1)" alt="scan">'
       +'<div>'
       +'<div style="font-family:\'Cinzel\',serif;font-size:14px">📸 Scan offline</div>'
-      +'<div class="muted" style="font-size:11px">'+matches.length+' match(s)/'+filteredSize.toLocaleString()+' • '+dt+' ms • d_min='+bestD+'</div></div>'
+      +'<div class="muted" style="font-size:11px">'+matches.length+'/'+filteredSize.toLocaleString()+' • pHash '+phashDt+'ms • d_min='+bestD+(ocrInfo?' • OCR:'+(ocrInfo.setCode?ocrInfo.setCode+'-':'')+(ocrInfo.number||'?'):'')+'</div></div>'
       +'</div>'
-      +'<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff;flex-shrink:0">pHash</span></div>'
-      +(bestD>22?'<div class="hint" style="background:rgba(255,150,150,.1);padding:6px 8px;border-radius:6px;margin-bottom:8px">⚠️ Confiance faible. Recadre la carte dans le rectangle doré, ou essaie ✨ IA.</div>':'')
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap">'+tags.join('')+'</div></div>'
+      +(bestD>22&&!ocrFiltered?'<div class="hint" style="background:rgba(255,150,150,.1);padding:6px 8px;border-radius:6px;margin-bottom:8px">⚠️ Confiance faible. Recadre la carte ou essaie ✨ IA.</div>':'')
       +'<div class="search-res">'+inner+'</div></div>';
   }catch(e){
     console.error(e);
