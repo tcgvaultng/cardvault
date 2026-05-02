@@ -3268,6 +3268,14 @@ async function captureCardOffline(){
       /* OCR sur la version full overlay (le plus de contexte pour le numéro) */
       ocrPromise=ocrCardBottom(workCanvas).catch(e=>{console.warn('OCR failed:',e);return ''});
     }
+    /* Lance Gemini en parallèle si clé configurée (gratuit free-tier 500/jour, fournit ID fiable) */
+    let geminiPromise=null;
+    if(STATE.config.geminiKey&&smartMode){
+      try{
+        const b64=canvas.toDataURL('image/jpeg',0.85).split(',')[1];
+        geminiPromise=geminiIdentify(b64).catch(e=>{console.warn('Gemini failed:',e.message);return null});
+      }catch(_){}
+    }
     /* 5) Filtres jeu/langue */
     const scanGame=document.getElementById('scanGame')?.value||'auto';
     const scanLang=document.getElementById('scanLang')?.value||'auto';
@@ -3304,6 +3312,55 @@ async function captureCardOffline(){
       if(ocrInfo){
         const filtered=matches.filter(m=>_ocrMatchesCardKey(m.key,ocrInfo));
         if(filtered.length){matches=filtered;ocrFiltered=true}
+      }
+    }
+    /* 6b) Gemini : si dispo, narrow-down par nom identifié (filtre le manifest) */
+    let geminiInfo=null,geminiUsed=false;
+    if(geminiPromise){
+      geminiInfo=await geminiPromise;
+      if(geminiInfo&&geminiInfo.name){
+        await loadLibraryManifest();
+        const namedGame=geminiInfo.game?mapGame(geminiInfo.game):scanGame;
+        const targetGame=(namedGame!=='auto'&&namedGame)?namedGame:null;
+        /* Cherche dans le manifest les cartes dont le nom matche celui de Gemini */
+        const nameNorm=geminiInfo.name.toLowerCase().replace(/[^a-z0-9]+/g,'');
+        const candidateKeys=new Set();
+        if(_libManifest&&_libManifest.cards){
+          for(const k in _libManifest.cards){
+            const e=_libManifest.cards[k];
+            if(!e||typeof e!=='object'||!e.n)continue;
+            const [g]=k.split('|',1);
+            if(targetGame&&g!==targetGame)continue;
+            const en=e.n.toLowerCase().replace(/[^a-z0-9]+/g,'');
+            if(en.includes(nameNorm)||nameNorm.includes(en))candidateKeys.add(k);
+          }
+        }
+        if(candidateKeys.size){
+          /* Filtre les pHash matches par les clés candidates Gemini */
+          const filtered=matches.filter(m=>candidateKeys.has(m.key));
+          if(filtered.length){
+            matches=filtered;
+            geminiUsed=true;
+          } else {
+            /* Aucun pHash dans les candidats : mais on a une identif Gemini.
+               Construit un nouveau set de matches à partir des candidats Gemini,
+               trié par distance pHash (calcul à la volée). */
+            const synthetic=[];
+            const qb=new Uint8Array(8);
+            for(let i=0;i<8;i++)qb[i]=parseInt(queryHex.slice(i*2,i*2+2),16);
+            const POP=_PHASH_POPCNT;
+            for(const k of candidateKeys){
+              const idx=_phashDB.keys.indexOf(k);
+              if(idx<0){synthetic.push({key:k,distance:64});continue}
+              const o8=idx*8;const b=_phashDB.bytes;
+              const d=POP[b[o8]^qb[0]]+POP[b[o8+1]^qb[1]]+POP[b[o8+2]^qb[2]]+POP[b[o8+3]^qb[3]]+POP[b[o8+4]^qb[4]]+POP[b[o8+5]^qb[5]]+POP[b[o8+6]^qb[6]]+POP[b[o8+7]^qb[7]];
+              synthetic.push({key:k,distance:d});
+            }
+            synthetic.sort((a,b)=>a.distance-b.distance);
+            matches=synthetic.slice(0,10);
+            geminiUsed=true;
+          }
+        }
       }
     }
     /* 7) Construit les cartes depuis le manifest */
@@ -3352,9 +3409,10 @@ async function captureCardOffline(){
     previewCanvas.height=Math.round(previewCanvas.width*workCanvas.height/workCanvas.width);
     previewCanvas.getContext('2d').drawImage(workCanvas,0,0,previewCanvas.width,previewCanvas.height);
     const previewUrl=previewCanvas.toDataURL('image/jpeg',0.7);
-    /* Confidence boost si OCR a confirmé */
-    const confLabel=(d,verified)=>{
-      if(verified)return '<span style="color:#5cd17e">✓ confirmé OCR</span>';
+    /* Confidence : IA > OCR > pHash */
+    const confLabel=(d,ocrOK,iaOK)=>{
+      if(iaOK)return '<span style="color:#ffe27a">✓ IA confirmée</span>';
+      if(ocrOK)return '<span style="color:#5cd17e">✓ OCR confirmé</span>';
       return d<=4?'<span style="color:#5cd17e">≈99%</span>':d<=8?'<span style="color:#9be07e">≈95%</span>':d<=14?'<span style="color:#e0c87e">≈80%</span>':d<=22?'<span style="color:#e09e7e">≈60%</span>':'<span style="color:#e07e7e">douteux</span>';
     };
     const inner=cards.map((c,i)=>{
@@ -3362,7 +3420,7 @@ async function captureCardOffline(){
       return '<div class="card-row" data-act="pickScanResult" data-args="'+esc(JSON.stringify([i]))+'">'
         +imgTag(c.image)
         +'<div class="info"><div class="nm">'+esc(c.name)+'</div>'
-        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • d='+c._phashDist+' '+confLabel(c._phashDist,ocrFiltered&&i===0)+'</div></div>'
+        +'<div class="sub"><span class="badge-dot" style="background:'+(g.color||'#888')+'"></span>'+esc(c.set||g.name||c.game)+(c.number?' • #'+esc(c.number):'')+' • d='+c._phashDist+' '+confLabel(c._phashDist,ocrFiltered&&i===0,geminiUsed&&i===0)+'</div></div>'
         +'<div class="price">'+fmtEur(c.price)+'</div></div>';
     }).join('')
     +'<div class="muted text-center mt-10"><a href="#" data-act="pickScanResult" data-args="'+esc(JSON.stringify([manualIdx]))+'">Aucun ne correspond ? Ajouter manuellement</a></div>';
@@ -3372,6 +3430,7 @@ async function captureCardOffline(){
     tags.push('<span class="chip" style="background:rgba(120,180,255,.2);color:#7eb6ff;flex-shrink:0">pHash</span>');
     if(didRectify)tags.push('<span class="chip" style="background:rgba(180,120,255,.2);color:#c08eff;flex-shrink:0">CV redressé</span>');
     if(ocrFiltered)tags.push('<span class="chip" style="background:rgba(120,255,180,.2);color:#7eff9b;flex-shrink:0">OCR ✓</span>');
+    if(geminiUsed)tags.push('<span class="chip chip-gold">🌟 IA</span>');
     box.innerHTML='<div class="panel" style="margin-bottom:0;background:'+headerColor+'">'
       +'<div class="flex-between mb-10">'
       +'<div style="display:flex;gap:10px;align-items:center">'
