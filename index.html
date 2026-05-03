@@ -313,21 +313,22 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
-/* === Decks grid (même densité que Parcourir : minmax 140px) === */
-.decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-.deck-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;padding:6px;display:flex;flex-direction:column}
+/* === Decks grid (cartes un peu plus grandes que Parcourir) === */
+.decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+@media (min-width:1100px){.decks-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}}
+.deck-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;padding:8px;display:flex;flex-direction:column}
 .deck-card::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--cc,var(--violet)) 0%,transparent 60%);opacity:.18;pointer-events:none;z-index:0}
-.deck-card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.5)}
-.deck-card .deck-featured{position:relative;width:100%;aspect-ratio:5/7;background:#000;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;z-index:1}
+.deck-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.5)}
+.deck-card .deck-featured{position:relative;width:100%;aspect-ratio:5/7;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;z-index:1}
 .deck-card .deck-featured img{width:100%;height:100%;object-fit:cover;display:block}
-.deck-card .deck-featured.deck-featured-placeholder{font-size:36px;color:var(--text-mute);background:var(--panel)}
-.deck-card .deck-feat-label{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.85);color:var(--gold-2);font-size:11px;font-weight:700;padding:2px 5px;border-radius:4px;z-index:2}
-.deck-card .deck-info{position:relative;z-index:1;padding:6px 4px 2px;display:flex;flex-direction:column;gap:2px;min-width:0}
-.deck-card .deck-name{font-family:'Cinzel',serif;font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
-.deck-card .deck-meta{font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.deck-card .deck-identity{display:flex;gap:2px;align-items:center;margin:2px 0}
-.deck-card .deck-identity img{width:16px;height:16px;display:block}
-.deck-card .deck-stats{display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--text-dim);margin-top:auto}
+.deck-card .deck-featured.deck-featured-placeholder{font-size:48px;color:var(--text-mute);background:var(--panel)}
+.deck-card .deck-feat-label{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.85);color:var(--gold-2);font-size:14px;font-weight:700;padding:3px 7px;border-radius:5px;z-index:2}
+.deck-card .deck-info{position:relative;z-index:1;padding:8px 4px 2px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.deck-card .deck-name{font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
+.deck-card .deck-meta{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck-card .deck-identity{display:flex;gap:3px;align-items:center;margin:3px 0}
+.deck-card .deck-identity img{width:20px;height:20px;display:block}
+.deck-card .deck-stats{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-top:auto}
 body.theme-retro .deck-card{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:1px 1px 0 #808080}
 body.theme-retro .deck-card::before{display:none}
 body.theme-retro .deck-card:hover{transform:none}
