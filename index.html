@@ -313,6 +313,26 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Decks grid avec carte vedette === */
+.decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+@media (min-width:1100px){.decks-grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}}
+.deck-card{position:relative;background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;display:flex;flex-direction:column}
+.deck-card::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--cc,var(--violet)) 0%,transparent 70%);opacity:.12;pointer-events:none;z-index:0}
+.deck-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.5)}
+.deck-card .deck-featured{position:relative;aspect-ratio:5/3;overflow:hidden;background:#000}
+.deck-card .deck-featured img{width:100%;height:100%;object-fit:cover;object-position:center 20%}
+.deck-card .deck-featured.deck-featured-placeholder{display:flex;align-items:center;justify-content:center;background:var(--panel);font-size:48px;color:var(--text-mute)}
+.deck-card .deck-feat-label{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.85);color:var(--gold-2);font-size:10px;font-weight:700;padding:4px 8px;border-radius:6px;letter-spacing:.04em;text-transform:uppercase;font-family:'Cinzel',serif;backdrop-filter:blur(4px);z-index:2}
+.deck-card .deck-info{position:relative;z-index:1;padding:12px 14px;flex:1;display:flex;flex-direction:column;gap:4px}
+.deck-card .deck-name{font-family:'Cinzel',serif;font-weight:700;font-size:16px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck-card .deck-meta{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck-card .deck-stats{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-top:6px}
+body.theme-retro .deck-card{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:1px 1px 0 #808080}
+body.theme-retro .deck-card::before{display:none}
+body.theme-retro .deck-card:hover{transform:none}
+body.theme-retro .deck-card .deck-feat-label{background:#000080;color:#fff;font-family:inherit!important;border-radius:0;border:1px solid #fff}
+body.theme-retro .deck-card .deck-name{color:#000;font-family:inherit!important}
+
 /* === Commander picker sections === */
 .cmd-sec-title{font-family:'Cinzel',serif;font-size:13px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
 .cmd-other{margin-top:14px}
@@ -2614,15 +2634,38 @@ function renderDecks(){
     box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>Aucun deck</h3><p class="muted">Construis ton premier deck à partir de tes cartes.</p><button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button></div>';
     return;
   }
-  box.innerHTML='<div class="coll-grid">'
+  box.innerHTML='<div class="decks-grid">'
     +u.decks.map(d=>{
       const main=(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const side=(d.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const g=GAMES[d.game]||{};
-      return '<div class="coll-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
-        +'<div><div class="cc-name">'+esc(d.name)+'</div>'
-        +'<div class="cc-meta"><span>'+(g.icon||'')+' '+esc(d.format||g.name||'')+'</span><span>'+main+'+'+side+' cartes</span></div></div>'
-        +'<div class="cc-value">'+main+' main · '+side+' side</div></div>';
+      /* Carte vedette : commandant si défini, sinon carte la plus chère du mainboard, sinon 1ère carte */
+      let featured=null,featuredLabel='';
+      if(d.commander&&d.commander.snapshot){
+        featured=d.commander.snapshot;featuredLabel='👑 Commandant';
+      } else if((d.mainboard||[]).length>0){
+        /* Trouve la carte la plus chère parmi les snapshots */
+        const entries=d.mainboard;
+        const enriched=entries.map(e=>{
+          const live=(u.cards||[]).find(c=>c.id===e.cardId);
+          return {snap:e.snapshot||live||{},price:(live&&live.price)||0};
+        });
+        enriched.sort((a,b)=>b.price-a.price);
+        featured=enriched[0].snap;featuredLabel='⭐ Carte maîtresse';
+      }
+      const featuredHtml=featured&&featured.image
+        ? '<div class="deck-featured"><img src="'+esc(featured.image)+'" loading="lazy" alt="">'
+          +'<div class="deck-feat-label">'+featuredLabel+'</div></div>'
+        : '<div class="deck-featured deck-featured-placeholder"><div>🎴</div></div>';
+      const validation=validateDeck(d);
+      const status=validation.rules?(validation.ok?'<span style="color:#5cd17e">✓ Légal</span>':'<span style="color:#e05a5a">⚠️ '+validation.msgs.length+'</span>'):'';
+      return '<div class="deck-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
+        +featuredHtml
+        +'<div class="deck-info">'
+        +'<div class="deck-name">'+esc(d.name)+'</div>'
+        +'<div class="deck-meta">'+(g.icon||'')+' '+esc(d.format||g.name||'')+(featured&&featured.name?' · '+esc(featured.name):'')+'</div>'
+        +'<div class="deck-stats"><span>📚 '+main+' main</span>'+(side?'<span>📋 '+side+' side</span>':'')+(status?'<span>'+status+'</span>':'')+'</div>'
+        +'</div></div>';
     }).join('')
     +'</div>';
 }
