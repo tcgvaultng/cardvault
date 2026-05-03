@@ -2327,24 +2327,51 @@ async function syncPull(){
 /* === Constructeur de decks === */
 function _ensureDecks(){const u=getUser();if(!u)return null;u.decks=u.decks||[];return u}
 
+/* Formats de jeu standardisés (extensible) */
+const DECK_FORMATS={
+  mtg:['Standard','Pioneer','Modern','Legacy','Vintage','Commander/EDH','Pauper','Brawl','Historic','Alchemy','Pre-modern','Casual'],
+  pokemon:['Standard','Expanded','Unlimited','Théma','Glissade','Casual'],
+  onepiece:['Standard','Casual'],
+  yugioh:['Advanced','Traditional','Goat','Edison','Casual'],
+};
+function _formatOptions(game){
+  const list=DECK_FORMATS[game]||['Casual'];
+  return list.map(f=>'<option value="'+esc(f)+'">'+esc(f)+'</option>').join('');
+}
+
 function openNewDeck(){
   const u=_ensureDecks();if(!u)return;
+  const defaultGame=Object.keys(GAMES)[0];
   openModal('Nouveau deck',
     '<div class="field"><label>Nom du deck</label><input id="dk_name" placeholder="ex: Mono-Rouge Aggro" autofocus></div>'
     +'<div class="field"><label>Jeu</label><select id="dk_game">'
     +Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('')
     +'</select></div>'
-    +'<div class="field"><label>Format (optionnel)</label><input id="dk_format" placeholder="ex: Commander, Standard, EDH"></div>'
-    +'<button class="btn btn-primary btn-block" id="dk_create">✨ Créer</button>',
+    +'<div class="field"><label>Format</label><select id="dk_format">'+_formatOptions(defaultGame)+'</select></div>'
+    +'<button class="btn btn-primary btn-block" id="dk_create">✨ Créer le deck</button>',
     ()=>{
-      document.getElementById('dk_create').addEventListener('click',()=>{
-        const name=document.getElementById('dk_name').value.trim();
-        if(!name)return;
-        const deck={id:uid(),name,game:document.getElementById('dk_game').value,format:document.getElementById('dk_format').value.trim(),mainboard:[],sideboard:[],createdAt:Date.now(),updatedAt:Date.now()};
+      const nameInput=document.getElementById('dk_name');
+      const gameSel=document.getElementById('dk_game');
+      const fmtSel=document.getElementById('dk_format');
+      const btn=document.getElementById('dk_create');
+      /* Update format options quand jeu change */
+      gameSel.addEventListener('change',()=>{
+        fmtSel.innerHTML=_formatOptions(gameSel.value);
+      });
+      const submit=()=>{
+        const name=nameInput.value.trim();
+        if(!name){toast('Donne un nom au deck','err');nameInput.focus();return}
+        const u=_ensureDecks();if(!u)return;
+        const deck={id:uid(),name,game:gameSel.value,format:fmtSel.value,mainboard:[],sideboard:[],createdAt:Date.now(),updatedAt:Date.now()};
         u.decks.push(deck);
         touchActiveUser();saveLocal();scheduleSync();closeModal();
-        renderDecks();openDeck(deck.id);
-      });
+        renderDecks();
+        toast('Deck "'+esc(name)+'" créé ✓','ok');
+        setTimeout(()=>openDeck(deck.id),100);
+      };
+      btn.addEventListener('click',submit);
+      /* Submit aussi via Enter dans le nom */
+      nameInput.addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
     });
 }
 
