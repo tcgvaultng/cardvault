@@ -313,6 +313,17 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Validation deck (règles de format) === */
+.deck-validation{padding:10px 12px;border-radius:var(--radius-sm);border:1px solid;margin-bottom:12px;font-size:12px}
+.deck-validation.ok{background:rgba(75,201,132,.06);border-color:rgba(75,201,132,.4);color:var(--text)}
+.deck-validation.err{background:rgba(224,90,90,.06);border-color:rgba(224,90,90,.4);color:var(--text)}
+.deck-validation .hint{color:var(--text-dim);font-size:11px;margin:4px 0 0;line-height:1.5}
+.deck-validation .deck-issues{margin:8px 0 0;padding:0 0 0 18px;color:var(--red);font-size:11px;line-height:1.6}
+.deck-validation .deck-issues li{margin:2px 0}
+body.theme-retro .deck-validation{background:#fff;border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0!important}
+body.theme-retro .deck-validation.err{background:#ffeaea}
+body.theme-retro .deck-validation .hint{color:#000}
+
 /* === Filtres avancés === */
 .advanced-filters{margin-bottom:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px}
 .advanced-filters summary{cursor:pointer;font-size:13px;color:var(--text-dim);font-weight:600;padding:4px 0}
@@ -2337,6 +2348,81 @@ const DECK_FORMATS={
   onepiece:['Standard','Casual'],
   yugioh:['Advanced','Traditional','Goat','Edison','Casual'],
 };
+
+/* Règles par format : taille deck/side, copies max, exceptions */
+const FORMAT_RULES={
+  mtg:{
+    'Standard'      :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Pioneer'       :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Modern'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Legacy'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Vintage'       :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true,note:'Cartes restricted limitées à 1'},
+    'Commander/EDH' :{mainMin:100,mainMax:100,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true,note:'100 cartes exactes (singleton)'},
+    'Pauper'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true,note:'Common only'},
+    'Brawl'         :{mainMin:60,mainMax:60,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true},
+    'Historic'      :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Alchemy'       :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+    'Pre-modern'    :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
+  },
+  pokemon:{
+    'Standard'  :{mainMin:60,mainMax:60,maxCopies:4,energyExempt:true,note:'Énergie de base illimitée'},
+    'Expanded'  :{mainMin:60,mainMax:60,maxCopies:4,energyExempt:true},
+    'Unlimited' :{mainMin:60,mainMax:60,maxCopies:4,energyExempt:true},
+    'Théma'     :{mainMin:60,mainMax:60,note:'Selon le thème (deck préconstruit)'},
+    'Glissade'  :{note:'Format libre, pas de règles strictes'},
+  },
+  onepiece:{
+    'Standard'  :{mainMin:50,mainMax:50,maxCopies:4,note:'+ 1 Leader + 10 cartes Don à part'},
+  },
+  yugioh:{
+    'Advanced'    :{mainMin:40,mainMax:60,sideMax:15,extraMax:15,maxCopies:3,note:'Liste Forbidden/Limited en vigueur'},
+    'Traditional' :{mainMin:40,mainMax:60,sideMax:15,extraMax:15,maxCopies:3,note:'Forbidden = Limited'},
+    'Goat'        :{mainMin:40,mainMax:60,sideMax:15,extraMax:15,maxCopies:3,note:'Format avril 2005'},
+    'Edison'      :{mainMin:40,mainMax:60,sideMax:15,extraMax:15,maxCopies:3,note:'Format mars 2010'},
+  },
+};
+function _basicLandRegex(){return /^(plains|island|swamp|mountain|forest|wastes|plaine|[îi]le|marais|montagne|for[êe]t)$/i}
+function _isBasicLand(name){return _basicLandRegex().test((name||'').trim())}
+function _isPokemonBasicEnergy(name){return /^([\w]+\s+)?(energy|énergie)\s+(de\s+base|basic|fire|water|grass|electric|psychic|fighting|darkness|metal|fairy|colorless|feu|eau|plante|électrique|combat|obscurité|métal|fée|incolore)/i.test((name||'').trim())||/^basic\s+/i.test((name||'').trim())}
+
+function getFormatRules(game,format){return FORMAT_RULES[game]?.[format]||null}
+
+function validateDeck(deck){
+  const rules=getFormatRules(deck.game,deck.format);
+  if(!rules)return {ok:true,msgs:[],rules:null};
+  const main=deck.mainboard||[];
+  const side=deck.sideboard||[];
+  const mainQty=main.reduce((s,e)=>s+(e.qty||1),0);
+  const sideQty=side.reduce((s,e)=>s+(e.qty||1),0);
+  const msgs=[];
+  let ok=true;
+  if(rules.mainMin&&mainQty<rules.mainMin){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — minimum '+rules.mainMin});ok=false}
+  if(rules.mainMax&&mainQty>rules.mainMax){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — maximum '+rules.mainMax});ok=false}
+  if(rules.sideMax!=null&&sideQty>rules.sideMax){msgs.push({type:'err',text:'Sideboard : '+sideQty+' carte(s) — maximum '+rules.sideMax});ok=false}
+  /* Vérification copies par carte */
+  const exempt=name=>{
+    if(rules.basicsExempt&&_isBasicLand(name))return true;
+    if(rules.energyExempt&&_isPokemonBasicEnergy(name))return true;
+    return false;
+  };
+  const limit=rules.singleton?1:rules.maxCopies;
+  if(limit){
+    /* Pour les cartes 'singleton', il faut compter par NOM (pas id) car même nom = même carte */
+    const counts={};
+    for(const arr of [main,side]){
+      for(const e of arr){
+        const name=(e.snapshot&&e.snapshot.name)||'';
+        if(!name)continue;
+        counts[name]=(counts[name]||0)+(e.qty||1);
+      }
+    }
+    for(const [name,qty] of Object.entries(counts)){
+      if(exempt(name))continue;
+      if(qty>limit){msgs.push({type:'err',text:'« '+name+' » : '+qty+' / max '+limit});ok=false}
+    }
+  }
+  return {ok,msgs,rules,mainQty,sideQty};
+}
 function _formatOptions(game){
   const list=DECK_FORMATS[game]||['Casual'];
   return list.map(f=>'<option value="'+esc(f)+'">'+esc(f)+'</option>').join('');
@@ -2405,14 +2491,31 @@ function openDeck(deckId){
   const mainQty=(deck.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
   const sideQty=(deck.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
   const probaSection=_renderProbaSection(deck);
+  const validation=validateDeck(deck);
+  /* Compte total par nom pour signaler les cartes en surplus */
+  const countsByName={};
+  for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
+    const n=(e.snapshot&&e.snapshot.name)||'';
+    if(n)countsByName[n]=(countsByName[n]||0)+(e.qty||1);
+  }
   const renderEntry=(e,bd)=>{
     const c=(u.cards||[]).find(x=>x.id===e.cardId)||e.snapshot||{};
     const qty=e.qty||1;
     const argsAdj=(d)=>esc(JSON.stringify([deck.id,e.cardId,bd,d]));
     const argsRm=esc(JSON.stringify([deck.id,e.cardId,bd]));
+    /* Warning ⚠️ si dépasse la limite du format */
+    let warn='';
+    if(validation.rules){
+      const limit=validation.rules.singleton?1:validation.rules.maxCopies;
+      const totalSameName=countsByName[c.name]||0;
+      const exempt=(validation.rules.basicsExempt&&_isBasicLand(c.name))||(validation.rules.energyExempt&&_isPokemonBasicEnergy(c.name));
+      if(limit&&!exempt&&totalSameName>limit){
+        warn=' <span title="Dépasse la limite du format" style="color:#e05a5a;margin-left:4px">⚠️ '+totalSameName+'/'+limit+'</span>';
+      }
+    }
     return '<div class="card-row">'
       +imgTag(c.image)
-      +'<div class="info"><div class="nm">'+esc(c.name||'?')+'</div>'
+      +'<div class="info"><div class="nm">'+esc(c.name||'?')+warn+'</div>'
       +'<div class="sub">'+esc(c.set||'')+(c.number?' • #'+esc(c.number):'')+'</div></div>'
       +'<span class="qty-pill qty-multi">'+qty+'</span>'
       +'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsAdj(-1)+'">−</button>'
@@ -2422,12 +2525,33 @@ function openDeck(deckId){
   };
   const addArgs=esc(JSON.stringify([deck.id]));
   const delArgs=esc(JSON.stringify([deck.id]));
+  /* Section validation / règles du format */
+  let validationHtml='';
+  if(validation.rules){
+    const r=validation.rules;
+    const parts=[];
+    if(r.mainMin&&r.mainMax)parts.push('Mainboard: <b>'+(r.mainMin===r.mainMax?r.mainMin+' exact':r.mainMin+'-'+r.mainMax)+'</b>');
+    else if(r.mainMin)parts.push('Mainboard: <b>min '+r.mainMin+'</b>');
+    if(r.sideMax!=null&&r.sideMax>0)parts.push('Side: <b>max '+r.sideMax+'</b>');
+    else if(r.sideMax===0)parts.push('Side: <b>aucun</b>');
+    if(r.singleton)parts.push('<b>Singleton</b> (1 max)');
+    else if(r.maxCopies)parts.push('Copies: <b>max '+r.maxCopies+'</b>');
+    if(r.basicsExempt)parts.push('Terrains de base illimités');
+    if(r.energyExempt)parts.push('Énergie de base illimitée');
+    const status=validation.ok?'<span style="color:#5cd17e;font-weight:700">✓ Deck légal</span>':'<span style="color:#e05a5a;font-weight:700">⚠️ '+validation.msgs.length+' problème'+(validation.msgs.length>1?'s':'')+'</span>';
+    validationHtml='<div class="deck-validation '+(validation.ok?'ok':'err')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>📋 '+esc(deck.format)+'</b>'+status+'</div>'
+      +'<div class="hint" style="font-size:11px">'+parts.join(' • ')+(r.note?' · <i>'+esc(r.note)+'</i>':'')+'</div>'
+      +(validation.msgs.length?'<ul class="deck-issues">'+validation.msgs.map(m=>'<li>'+esc(m.text)+'</li>').join('')+'</ul>':'')
+      +'</div>';
+  }
   openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
     '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
+    +validationHtml
     +'<button class="btn btn-violet btn-block mb-10" data-act="addCardToDeck" data-args="'+addArgs+'">+ Ajouter une carte depuis ma collection</button>'
-    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+')</h3>'
+    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+(validation.rules&&validation.rules.mainMin?' / '+validation.rules.mainMin:'')+')</h3>'
     +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
-    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+')</h3>'
+    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+(validation.rules&&validation.rules.sideMax!=null?' / '+validation.rules.sideMax:'')+')</h3>'
     +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
     +probaSection
     +'<button class="btn btn-danger btn-block mt-10" data-act="deleteDeck" data-args="'+delArgs+'">🗑️ Supprimer ce deck</button>'
