@@ -2398,47 +2398,49 @@ function renderDecks(){
 function openDeck(deckId){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);
-  if(!deck)return;
-  const render=()=>{
-    const mainQty=(deck.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
-    const sideQty=(deck.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
-    /* Probabilités hypergéométriques : tirer K cartes, prob d'avoir au moins 1 carte type X (sur N copies dans deck T total) */
-    const probaSection=_renderProbaSection(deck);
-    /* Cartes mainboard */
-    const renderEntry=(e,bd)=>{
-      const c=(u.cards||[]).find(x=>x.id===e.cardId)||e.snapshot||{};
-      const qty=e.qty||1;
-      return '<div class="card-row">'
-        +imgTag(c.image)
-        +'<div class="info"><div class="nm">'+esc(c.name||'?')+'</div>'
-        +'<div class="sub">'+esc(c.set||'')+(c.number?' • #'+esc(c.number):'')+'</div></div>'
-        +'<span class="qty-pill qty-multi">'+qty+'</span>'
-        +'<button class="btn btn-ghost btn-sm" onclick="adjustDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\',-1);return false">−</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="adjustDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\',1);return false">+</button>'
-        +'<button class="btn btn-danger btn-sm" onclick="removeDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\');return false">🗑</button>'
-        +'</div>';
-    };
-    openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
-      '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
-      +'<button class="btn btn-violet btn-block mb-10" onclick="addCardToDeck(\''+deck.id+'\');return false">+ Ajouter une carte depuis ma collection</button>'
-      +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+')</h3>'
-      +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
-      +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+')</h3>'
-      +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
-      +probaSection
-      +'<button class="btn btn-danger btn-block mt-10" onclick="deleteDeck(\''+deck.id+'\');return false">🗑️ Supprimer ce deck</button>'
-    );
+  if(!deck){toast('Deck introuvable','err');return}
+  const mainQty=(deck.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+  const sideQty=(deck.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+  const probaSection=_renderProbaSection(deck);
+  const renderEntry=(e,bd)=>{
+    const c=(u.cards||[]).find(x=>x.id===e.cardId)||e.snapshot||{};
+    const qty=e.qty||1;
+    const argsAdj=(d)=>esc(JSON.stringify([deck.id,e.cardId,bd,d]));
+    const argsRm=esc(JSON.stringify([deck.id,e.cardId,bd]));
+    return '<div class="card-row">'
+      +imgTag(c.image)
+      +'<div class="info"><div class="nm">'+esc(c.name||'?')+'</div>'
+      +'<div class="sub">'+esc(c.set||'')+(c.number?' • #'+esc(c.number):'')+'</div></div>'
+      +'<span class="qty-pill qty-multi">'+qty+'</span>'
+      +'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsAdj(-1)+'">−</button>'
+      +'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsAdj(1)+'">+</button>'
+      +'<button class="btn btn-danger btn-sm" data-act="removeDeckCard" data-args="'+argsRm+'">🗑</button>'
+      +'</div>';
   };
-  render();
+  const addArgs=esc(JSON.stringify([deck.id]));
+  const delArgs=esc(JSON.stringify([deck.id]));
+  openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
+    '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
+    +'<button class="btn btn-violet btn-block mb-10" data-act="addCardToDeck" data-args="'+addArgs+'">+ Ajouter une carte depuis ma collection</button>'
+    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+')</h3>'
+    +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
+    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+')</h3>'
+    +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
+    +probaSection
+    +'<button class="btn btn-danger btn-block mt-10" data-act="deleteDeck" data-args="'+delArgs+'">🗑️ Supprimer ce deck</button>'
+  );
 }
 
 function addCardToDeck(deckId){
-  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);
+  if(!deck){toast('Deck introuvable','err');return}
   const cards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
-  if(cards.length===0){toast('Aucune carte dans la collection pour ce jeu','err');return}
+  if(cards.length===0){toast('Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');return}
   cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
   openModal('Ajouter au deck — '+deck.name,
     '<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">'
+    +'<div class="muted mb-10" style="font-size:11px">Click une carte pour l\'ajouter au mainboard</div>'
     +'<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">'
     +cards.map(c=>{
       const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
@@ -2459,33 +2461,46 @@ function addCardToDeck(deckId){
       });
     });
 }
-window._pickDeckCard=function(deckId,cardId,bd){
-  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
-  const card=(u.cards||[]).find(c=>c.id===cardId);if(!card)return;
+
+function _pickDeckCardAction(deckId,cardId,bd){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck){toast('Deck introuvable','err');return}
+  const card=(u.cards||[]).find(c=>c.id===cardId);if(!card){toast('Carte introuvable','err');return}
   deck[bd]=deck[bd]||[];
   const exist=deck[bd].find(e=>e.cardId===cardId);
   if(exist){exist.qty=(exist.qty||1)+1}
   else deck[bd].push({cardId,qty:1,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,cmc:card.cmc,colors:card.colors,types:card.types}});
   deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  closeModal();openDeck(deckId);
-};
-window.adjustDeckCard=function(deckId,cardId,bd,delta){
-  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  toast('+1 '+esc(card.name),'ok');
+  closeModal();
+  setTimeout(()=>openDeck(deckId),50);
+}
+
+function adjustDeckCard(deckId,cardId,bd,delta){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   const arr=deck[bd]||[];const e=arr.find(x=>x.cardId===cardId);if(!e)return;
   e.qty=(e.qty||1)+delta;
   if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
-  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();openDeck(deckId);
-};
-window.removeDeckCard=function(deckId,cardId,bd){
-  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
+  closeModal();setTimeout(()=>openDeck(deckId),50);
+}
+
+function removeDeckCard(deckId,cardId,bd){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   deck[bd]=(deck[bd]||[]).filter(e=>e.cardId!==cardId);
-  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();openDeck(deckId);
-};
-window.deleteDeck=function(deckId){
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
+  closeModal();setTimeout(()=>openDeck(deckId),50);
+}
+
+function deleteDeck(deckId){
   if(!confirm('Supprimer ce deck ?'))return;
-  const u=_ensureDecks();u.decks=(u.decks||[]).filter(d=>d.id!==deckId);
+  const u=_ensureDecks();if(!u)return;
+  u.decks=(u.decks||[]).filter(d=>d.id!==deckId);
   touchActiveUser();saveLocal();scheduleSync();closeModal();renderDecks();
-};
+  toast('Deck supprimé','ok');
+}
 
 /* === Probabilités hypergéométriques (deck) === */
 function _hypergeometric(N,K,n,k){
@@ -6024,8 +6039,7 @@ registerActions({
   backupExport,backupImportPrompt,
   toggleWishlist,setCardsMode,
   installPwa,
-  openNewDeck,openDeck,
-  _pickDeckCardAction:(deckId,cardId,bd)=>window._pickDeckCard(deckId,cardId,bd)
+  openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck
 });
 
 /* ==================== WIRING ==================== */
