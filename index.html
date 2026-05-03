@@ -1655,37 +1655,30 @@ function openManualAdd(){
           status.style.color='var(--text-dim)';
           const cardId=sc+'-'+num;
           const baseUrl=cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev';
-          let imageUrl=editing?editing.image:'';
-          let backUrl=editing?editing.imageBack||'':'';
-          if(file){
-            status.textContent='Compression recto…';
-            const blob=await compressImageWebp(file);
-            const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
-            status.textContent='Upload recto ('+(blob.size/1024).toFixed(0)+' KB)…';
-            await r2PutObject(key,blob,'image/webp');
-            imageUrl=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
-          }
-          if(fileBack){
-            status.textContent='Compression verso…';
-            const blob2=await compressImageWebp(fileBack);
-            const key2=game+'/'+lang+'/_personal/'+cardId+'_back.webp';
-            status.textContent='Upload verso ('+(blob2.size/1024).toFixed(0)+' KB)…';
-            await r2PutObject(key2,blob2,'image/webp');
-            backUrl=baseUrl+'/'+key2.split('/').map(encodeURIComponent).join('/');
-          }
+          /* === ETAPE 1 : compression locale (rapide, fiable) ============== */
+          let frontBlob=null,backBlob=null;
+          if(file){status.textContent='Compression recto…';frontBlob=await compressImageWebp(file)}
+          if(fileBack){status.textContent='Compression verso…';backBlob=await compressImageWebp(fileBack)}
+          /* === ETAPE 2 : on enregistre la carte LOCALEMENT TOUT DE SUITE ===
+             Image temporaire = blob URL (visible uniquement sur cet appareil
+             tant que l'upload R2 n'a pas reussi). Comme ca la carte ne disparait
+             jamais meme si R2 est en panne. */
+          const tempFrontUrl=frontBlob?URL.createObjectURL(frontBlob):(editing?editing.image:'');
+          const tempBackUrl=backBlob?URL.createObjectURL(backBlob):(editing?editing.imageBack||'':'');
+          const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
+          let savedCard;
           if(editing){
-            /* Mise a jour */
             editing.name=cardName;editing.printedName=cardName;
             editing.game=game;editing.lang=lang;
             editing.setCode=sc;editing.number=num;
             editing.set=setName||sc.toUpperCase();
-            editing.image=imageUrl;
-            if(backUrl)editing.imageBack=backUrl;
+            if(frontBlob)editing.image=tempFrontUrl;
+            if(backBlob)editing.imageBack=tempBackUrl;
             if(!isNaN(price))editing.price=price;
-            const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
             editing[idField]=cardId;
             editing.updatedAt=Date.now();
-            touchCard(editing);saveLocal();scheduleSync();
+            savedCard=editing;
+            touchCard(editing);saveLocal();
             toast('Carte mise à jour ✓','ok');
           } else {
             if(!u.collections||u.collections.length===0){
@@ -1694,27 +1687,46 @@ function openManualAdd(){
             }
             const cid=u.collections[0].id;
             const now=Date.now();
-            const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
             const newCard={id:uid(),collectionId:cid,name:cardName,printedName:cardName,
               game,set:setName||sc.toUpperCase(),setCode:sc,number:num,
-              image:imageUrl,imageBack:backUrl||undefined,
+              image:tempFrontUrl,imageBack:tempBackUrl||undefined,
               price:isNaN(price)?null:price,quantity:1,lang,addedAt:now,updatedAt:now,
-              _manual:true};
+              _manual:true,_pendingUpload:true};
             newCard[idField]=cardId;
             u.cards=u.cards||[];u.cards.push(newCard);
-            touchActiveUser();saveLocal();scheduleSync();
+            savedCard=newCard;
+            touchActiveUser();saveLocal();
             /* Reset des filtres qui pourraient masquer la nouvelle carte */
             _cardsMode='owned';_gameFilter='all';
             _advFilters={mtgColors:new Set(),mtgType:'',mtgRarity:'',mtgCmcMin:0,mtgCmcMax:99,pkmType:'',pkmRarity:'',pkmHpMin:0,pkmHpMax:999,priceMin:0,priceMax:1e9,conditionFilter:'',foilOnly:false};
             const ftxt=document.getElementById('filterCards');if(ftxt)ftxt.value='';
             const collName=u.collections.find(x=>x.id===cid)?.name||'Principale';
             toast('Carte ajoutée à « '+collName+' » ✓','ok');
-            closeModal();renderCollections();renderAllCards();
-            /* Bascule sur l'onglet Mes cartes pour que l'utilisateur voie la nouvelle carte */
-            switchView('cards');
-            return;
           }
           closeModal();renderCollections();renderAllCards();
+          if(!editing)switchView('cards');
+          /* === ETAPE 3 : upload R2 en arriere-plan (best-effort) ========== */
+          (async()=>{
+            try{
+              if(frontBlob){
+                const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
+                await r2PutObject(key,frontBlob,'image/webp');
+                savedCard.image=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
+              }
+              if(backBlob){
+                const key2=game+'/'+lang+'/_personal/'+cardId+'_back.webp';
+                await r2PutObject(key2,backBlob,'image/webp');
+                savedCard.imageBack=baseUrl+'/'+key2.split('/').map(encodeURIComponent).join('/');
+              }
+              delete savedCard._pendingUpload;
+              savedCard.updatedAt=Date.now();
+              touchActiveUser();saveLocal();scheduleSync();
+              renderAllCards();
+            }catch(err){
+              console.error('Upload R2 echoue (carte sauvegardee localement) :',err);
+              toast('⚠️ Image non uploadée (carte conservée localement) : '+err.message,'err');
+            }
+          })();
         }catch(e){status.textContent='❌ '+e.message;status.style.color='var(--red)';console.error(e)}
       });
     });
