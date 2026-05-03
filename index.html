@@ -2737,36 +2737,73 @@ function addCardToDeck(deckId){
     chooseCommander(deckId);
     return;
   }
-  let cards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
-  /* Filtre Commander : cartes dont l'identité couleur ⊆ celle du commandant */
-  let cmdrFiltered=false;
+  let allCards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
+  if(allCards.length===0){toast('Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');return}
+  /* Filtre Commander STRICT : 3 buckets */
+  let matchedCards=allCards;
+  let unknownCards=[];
+  let blockedCount=0;
   if(deck.commander){
     const cmdrIdentity=deck.commander.snapshot?.colorIdentity||[];
-    const before=cards.length;
-    cards=cards.filter(c=>_identitySubset(c.colorIdentity||c.colors||[],cmdrIdentity));
-    cmdrFiltered=cards.length<before;
+    matchedCards=[];unknownCards=[];blockedCount=0;
+    for(const c of allCards){
+      const ci=c.colorIdentity;
+      if(!Array.isArray(ci)){
+        /* Pas de données → bucket à enrichir */
+        unknownCards.push(c);
+      } else if(_identitySubset(ci,cmdrIdentity)){
+        matchedCards.push(c);
+      } else {
+        blockedCount++; /* hors identité, pas affiché */
+      }
+    }
   }
-  if(cards.length===0){
-    toast(cmdrFiltered?'Aucune carte compatible avec l\'identité du commandant':'Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');
+  if(matchedCards.length===0&&unknownCards.length===0){
+    toast(deck.commander?'Aucune carte compatible avec l\'identité du commandant ('+blockedCount+' hors identité)':'Aucune carte','err');
     return;
   }
-  cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
-  const filterHint=deck.commander
-    ? '👑 Filtrées par identité '+(_identityBadge(deck.commander.snapshot?.colorIdentity||[]))+' du commandant <b>'+esc(deck.commander.snapshot?.name||'')+'</b>'
-    : 'Click une carte pour l\'ajouter au mainboard';
-  openModal('Ajouter au deck — '+deck.name,
-    '<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">'
-    +'<div class="muted mb-10" style="font-size:11px">'+filterHint+' · '+cards.length+' carte(s) éligible(s)</div>'
-    +'<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">'
-    +cards.map(c=>{
-      const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
-      const idBadge=deck.commander?' '+_identityBadge(c.colorIdentity||c.colors||[]):'';
-      return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
-        +imgTag(c.image)
-        +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+'</div></div>'
-        +'<span class="qty-pill qty-multi">'+(c.quantity||1)+'</span></div>';
-    }).join('')
-    +'</div>',
+  matchedCards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  unknownCards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  const renderPickRow=c=>{
+    const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
+    const idBadge=deck.commander&&Array.isArray(c.colorIdentity)?' '+_identityBadge(c.colorIdentity):'';
+    return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
+      +imgTag(c.image)
+      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+'</div></div>'
+      +'<span class="qty-pill qty-multi">'+(c.quantity||1)+'</span></div>';
+  };
+  let html='';
+  html+='<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">';
+  if(deck.commander){
+    html+='<div class="muted mb-10" style="font-size:11px">👑 Identité '+_identityBadge(deck.commander.snapshot?.colorIdentity||[])
+      +' du commandant <b>'+esc(deck.commander.snapshot?.name||'')+'</b><br>'
+      +'✓ '+matchedCards.length+' carte(s) compatible(s)'
+      +(blockedCount?' · ⊘ '+blockedCount+' hors identité (cachées)':'')
+      +(unknownCards.length?' · ❓ '+unknownCards.length+' à enrichir':'')
+      +'</div>';
+    if(unknownCards.length>0){
+      html+='<div class="enrich-prompt" style="background:rgba(255,200,120,.08);border:1px solid rgba(255,200,120,.4);border-radius:8px;padding:10px;margin-bottom:10px">'
+        +'<div style="font-size:12px;margin-bottom:6px"><b>'+unknownCards.length+' carte(s)</b> sans identité couleur connue (ajoutées avant cette feature). Elles ne sont pas filtrables tant que les données ne sont pas récupérées.</div>'
+        +'<button class="btn btn-primary btn-sm" data-act="enrichMtgCards" data-args="'+esc(JSON.stringify([deckId]))+'">⚡ Enrichir via Scryfall</button>'
+        +'</div>';
+    }
+  } else {
+    html+='<div class="muted mb-10" style="font-size:11px">Click une carte pour l\'ajouter au mainboard</div>';
+  }
+  html+='<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">';
+  if(deck.commander&&matchedCards.length){
+    html+='<div class="cmd-sec-title">✓ Compatibles ('+matchedCards.length+')</div>'
+      +matchedCards.map(renderPickRow).join('');
+  } else if(!deck.commander){
+    html+=allCards.sort((a,b)=>a.name.localeCompare(b.name,'fr')).map(renderPickRow).join('');
+  }
+  if(unknownCards.length){
+    html+='<div class="cmd-sec-title">❓ Identité couleur inconnue ('+unknownCards.length+')</div>'
+      +'<div class="hint" style="font-size:11px;margin-bottom:6px">Click pour ajouter quand même (à tes risques)</div>'
+      +unknownCards.map(renderPickRow).join('');
+  }
+  html+='</div>';
+  openModal('Ajouter au deck — '+deck.name,html,
     ()=>{
       const inp=document.getElementById('dk_search');
       if(inp)inp.addEventListener('input',()=>{
@@ -2777,6 +2814,42 @@ function addCardToDeck(deckId){
         });
       });
     });
+}
+
+/* Enrichit les cartes MTG sans colorIdentity via Scryfall (lookup par nom).
+   Rate-limited (80ms entre requêtes), avec progress. */
+async function enrichMtgCards(deckId){
+  const u=getUser();if(!u)return;
+  const need=(u.cards||[]).filter(c=>c.game==='mtg'&&!Array.isArray(c.colorIdentity));
+  if(need.length===0){toast('Toutes les cartes ont déjà leur identité','ok');return}
+  closeModal();
+  showLoader('Lookup Scryfall : 0 / '+need.length);
+  let done=0,ok=0,fail=0;
+  for(const c of need){
+    try{
+      const r=await fetch('https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(c.name));
+      if(r.ok){
+        const sc=await r.json();
+        c.colorIdentity=sc.color_identity||[];
+        if(sc.type_line&&!c.typeLine)c.typeLine=sc.type_line;
+        if(sc.colors&&!c.colors)c.colors=sc.colors;
+        if(sc.cmc!=null&&c.cmc==null)c.cmc=sc.cmc;
+        if(sc.rarity&&!c.rarity)c.rarity=sc.rarity;
+        touchCard(c);
+        ok++;
+      } else fail++;
+    }catch(_){fail++}
+    done++;
+    const ld=document.getElementById('__loader');
+    if(ld){const lbl=ld.querySelector('div:last-child');if(lbl)lbl.textContent='Lookup Scryfall : '+done+' / '+need.length+' (✓'+ok+' ✗'+fail+')'}
+    if(done%10===0)saveLocal();
+    await new Promise(res=>setTimeout(res,80)); /* rate limit Scryfall */
+  }
+  saveLocal();scheduleSync();
+  hideLoader();
+  toast(ok+' enrichies, '+fail+' échouées','ok');
+  /* Réouvre le picker avec les nouvelles données */
+  if(deckId)setTimeout(()=>addCardToDeck(deckId),100);
 }
 
 function _pickDeckCardAction(deckId,cardId,bd){
@@ -6360,7 +6433,7 @@ registerActions({
   toggleWishlist,setCardsMode,
   installPwa,
   openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,
-  chooseCommander,setCommander,clearCommander
+  chooseCommander,setCommander,clearCommander,enrichMtgCards
 });
 
 /* ==================== WIRING ==================== */
