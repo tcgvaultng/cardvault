@@ -237,7 +237,32 @@ img[data-zoom]{cursor:zoom-in}
 .profile-item .nm{font-family:'Cinzel',serif;font-weight:700;font-size:16px}
 .profile-item .stats{font-size:12px;color:var(--text-dim)}
 
-.toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:999px;box-shadow:var(--shadow);z-index:200;font-size:14px;max-width:90%;text-align:center}
+.toast{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:50%;transform:translate(-50%,8px);background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:999px;box-shadow:var(--shadow);z-index:200;font-size:14px;max-width:90%;text-align:center;opacity:0;transition:opacity .25s ease,transform .25s ease;display:flex;align-items:center;gap:10px}
+.toast.toast-action{padding:8px 8px 8px 16px}
+.toast-undo{background:var(--gold);color:#231300;font-weight:700;padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;border:none;font-family:inherit;text-transform:uppercase;letter-spacing:.04em}
+.toast-undo:hover{filter:brightness(1.1)}
+
+/* === Skeletons (loading placeholders) === */
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+.skeleton{background:linear-gradient(90deg,var(--panel) 0%,var(--surface-2) 50%,var(--panel) 100%);background-size:800px 100%;animation:shimmer 1.2s linear infinite;border-radius:var(--radius-sm);display:inline-block}
+.skeleton-row{height:74px;width:100%;margin-bottom:8px}
+.skeleton-card{aspect-ratio:5/7;width:100%;border-radius:12px}
+.skeleton-text{height:14px;width:70%;margin:4px 0;border-radius:4px}
+.skeleton-text.sm{width:40%;height:11px}
+
+/* === Animations subtiles === */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.view.active{animation:fadeInUp .25s ease}
+.card-row,.gallery-card{animation:fadeInUp .2s ease backwards}
+/* Stagger : cartes apparaissent les unes après les autres */
+.card-row:nth-child(1),.gallery-card:nth-child(1){animation-delay:.02s}
+.card-row:nth-child(2),.gallery-card:nth-child(2){animation-delay:.04s}
+.card-row:nth-child(3),.gallery-card:nth-child(3){animation-delay:.06s}
+.card-row:nth-child(4),.gallery-card:nth-child(4){animation-delay:.08s}
+.card-row:nth-child(5),.gallery-card:nth-child(5){animation-delay:.1s}
+.card-row:nth-child(6),.gallery-card:nth-child(6){animation-delay:.12s}
+.card-row:nth-child(n+7),.gallery-card:nth-child(n+7){animation-delay:.14s}
+@media (prefers-reduced-motion:reduce){.card-row,.gallery-card,.view{animation:none}}
 .toast.ok{border-color:rgba(75,201,132,.5)}
 .toast.err{border-color:rgba(224,90,90,.5)}
 
@@ -280,6 +305,34 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .scan-actions>button:first-child{grid-column:1/-1} /* Démarrer caméra prend toute la ligne */
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
+
+/* === Buy-links (Cardmarket/TCGPlayer/Scryfall) === */
+.buy-links{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 14px;justify-content:center}
+.buy-link{display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;color:#fff;border:1px solid transparent;transition:transform .1s,filter .15s}
+.buy-link:hover{transform:translateY(-1px);filter:brightness(1.15)}
+.buy-cm{background:linear-gradient(135deg,#1f6feb,#0a4d99)}
+.buy-tcg{background:linear-gradient(135deg,#ff5e3a,#cc3a18)}
+.buy-scry{background:linear-gradient(135deg,#7a3ed8,#542b8e)}
+
+/* === Dashboard d'accueil === */
+.dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.dash-card{background:linear-gradient(135deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden;min-height:88px}
+.dash-card::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--cc,var(--gold)) 0%,transparent 70%);opacity:.12;pointer-events:none}
+.dash-card .dash-label{font-size:11px;text-transform:uppercase;color:var(--text-mute);letter-spacing:.06em;margin-bottom:4px;font-weight:600;position:relative}
+.dash-card .dash-value{font-size:22px;font-weight:700;font-family:'Cinzel',serif;color:var(--text);position:relative;line-height:1.1}
+.dash-card .dash-value.gold{color:var(--gold-2)}
+.dash-card .dash-value.green{color:var(--green)}
+.dash-card .dash-sub{font-size:11px;color:var(--text-dim);margin-top:6px;position:relative}
+.dash-card.dash-top{grid-column:span 2}
+@media (max-width:599px){.dash-card.dash-top{grid-column:auto}}
+.dash-top-list{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.dash-top-item{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.04);border-radius:6px;padding:4px 8px;font-size:11px}
+.dash-top-item img{width:24px;height:34px;object-fit:cover;border-radius:3px}
+.dash-game-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:8px}
+.dash-game-bar span{height:100%}
+.dash-game-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:10px;color:var(--text-dim)}
+.dash-game-legend span{display:flex;align-items:center;gap:4px}
+.dash-game-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
 
 /* === Mode rétro Windows 95 (déclenché par classe body.theme-retro) === */
 body.theme-retro .panel,body.theme-retro .modal,body.theme-retro .coll-card,body.theme-retro .card-row,body.theme-retro .card-detail #cardImgWrap{
@@ -534,6 +587,7 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
 
   <main>
     <section id="view-collections" class="view active">
+      <div id="dashboard" class="dashboard"></div>
       <div class="flex-between mb-10">
         <h2 style="font-size:20px;color:var(--gold-2)">Mes Collections</h2>
         <button class="btn btn-sm btn-violet" data-act="openNewCollection">+ Nouvelle</button>
@@ -783,6 +837,15 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
         <div class="row"><div class="field"><label>Bucket</label><input id="cfgR2Bucket" placeholder="cardvault-library"></div>
         <div class="field"><label>URL publique</label><input id="cfgR2PublicUrl" placeholder="https://pub-XXX.r2.dev"></div></div>
         <button class="btn btn-primary btn-block" data-act="saveR2Config">💾 Enregistrer R2</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">💾 Backup &amp; restauration</div>
+        <div class="muted mb-10">Sauvegarde locale (.json) en plus de la sync Gist. Utile pour archiver ou migrer.</div>
+        <div class="row">
+          <button class="btn btn-primary" data-act="backupExport">📥 Télécharger backup .json</button>
+          <button class="btn btn-ghost" data-act="backupImportPrompt">📤 Restaurer depuis fichier</button>
+        </div>
+        <input type="file" id="backupFile" accept="application/json,.json" style="display:none">
       </div>
       <div class="panel">
         <div class="panel-title">📚 Library partagée</div>
@@ -1499,7 +1562,23 @@ function searchLibrary(game,q,lang,opts){
 function uid(){return Math.random().toString(36).slice(2,11)+Date.now().toString(36)}
 function fmtEur(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function toast(msg,kind=''){const t=document.createElement('div');t.className='toast '+kind;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300)},2600)}
+function toast(msg,kind='',action){
+  const t=document.createElement('div');
+  t.className='toast '+kind+(action?' toast-action':'');
+  const span=document.createElement('span');span.textContent=msg;t.appendChild(span);
+  let dismissed=false;
+  const remove=()=>{if(dismissed)return;dismissed=true;t.style.opacity='0';t.style.transform='translate(-50%,8px)';setTimeout(()=>t.remove(),250)};
+  if(action&&action.label&&action.callback){
+    const btn=document.createElement('button');
+    btn.className='toast-undo';btn.textContent=action.label;
+    btn.addEventListener('click',e=>{e.stopPropagation();action.callback();remove()});
+    t.appendChild(btn);
+  }
+  document.body.appendChild(t);
+  /* Animation entrée */
+  requestAnimationFrame(()=>{t.style.opacity='1';t.style.transform='translate(-50%,0)'});
+  setTimeout(remove,action?5500:2600);
+}
 function showLoader(label='Chargement…'){hideLoader();const el=document.createElement('div');el.className='loader';el.id='__loader';el.innerHTML='<div class="spinner"></div><div>'+esc(label)+'</div>';document.body.appendChild(el)}
 function hideLoader(){const l=document.getElementById('__loader');if(l)l.remove()}
 function getUser(){if(!STATE.activeUser)return null;if(!STATE.users[STATE.activeUser])STATE.users[STATE.activeUser]={collections:[],cards:[],avatar:'🃏',createdAt:Date.now()};return STATE.users[STATE.activeUser]}
@@ -2066,10 +2145,116 @@ async function syncPull(){
 }
 
 /* ==================== COLLECTIONS ==================== */
+/* === Backup / Restore === */
+function backupExport(){
+  const data={version:'cardvault-backup-1',exportedAt:new Date().toISOString(),appVersion:APP_VERSION,state:STATE};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='cardvault-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast('Backup téléchargé ✓','ok');
+}
+function backupImportPrompt(){
+  const inp=document.getElementById('backupFile');
+  if(!inp)return;
+  inp.value='';
+  inp.click();
+}
+function _handleBackupFile(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!data||!data.state||!data.state.users){toast('Fichier invalide','err');return}
+      if(!confirm('Restaurer ce backup va REMPLACER complètement tes données actuelles. Continuer ?'))return;
+      STATE=Object.assign(STATE,data.state);
+      saveLocal();
+      if(STATE.config.gistId&&STATE.config.githubToken)scheduleSync();
+      toast('Backup restauré ✓','ok');
+      setTimeout(()=>location.reload(),800);
+    }catch(e){
+      toast('Erreur de lecture: '+e.message,'err');
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* === Liens directs vers Cardmarket / TCGPlayer === */
+function _slugCM(s){return (s||'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'')}
+function _buildBuyLinksHtml(c){
+  if(!c||!c.name)return '';
+  const links=[];
+  /* Cardmarket : URL standard avec slug du nom + filtre par jeu */
+  const cmGame={mtg:'Magic',pokemon:'Pokemon',yugioh:'YuGiOh',onepiece:'One-Piece-Card-Game'}[c.game];
+  if(cmGame){
+    const cmUrl='https://www.cardmarket.com/fr/'+cmGame+'/Products/Search?searchString='+encodeURIComponent(c.name);
+    links.push('<a class="buy-link buy-cm" href="'+cmUrl+'" target="_blank" rel="noopener">💰 Cardmarket</a>');
+  }
+  /* TCGPlayer search */
+  const tcgUrl='https://www.tcgplayer.com/search/all/product?productLineName='+encodeURIComponent({mtg:'magic',pokemon:'pokemon',yugioh:'yugioh',onepiece:'one-piece-card-game'}[c.game]||'all')+'&q='+encodeURIComponent(c.name);
+  links.push('<a class="buy-link buy-tcg" href="'+tcgUrl+'" target="_blank" rel="noopener">🛒 TCGPlayer</a>');
+  /* Scryfall pour MTG (lien direct vers la carte) */
+  if(c.game==='mtg'){
+    const scryfallUrl='https://scryfall.com/search?q='+encodeURIComponent('!"'+c.name+'"'+(c.setCode?' set:'+c.setCode:''));
+    links.push('<a class="buy-link buy-scry" href="'+scryfallUrl+'" target="_blank" rel="noopener">🔮 Scryfall</a>');
+  }
+  return '<div class="buy-links">'+links.join('')+'</div>';
+}
+
+/* === Conditions === */
+const CONDITION_LABELS={NM:'Mint / Near Mint',LP:'Légèrement joué (LP)',MP:'Joué (MP)',HP:'Très joué (HP)',DMG:'Endommagée'};
+const CONDITION_MULTIPLIER={NM:1,LP:0.9,MP:0.75,HP:0.55,DMG:0.35};
+function _conditionLabel(c){return CONDITION_LABELS[c]||c}
+
+function renderDashboard(){
+  const u=getUser();
+  const box=document.getElementById('dashboard');
+  if(!box||!u)return;
+  const cards=u.cards||[];
+  if(cards.length===0){box.innerHTML='';return}
+  const totalQty=cards.reduce((s,c)=>s+(c.quantity||1),0);
+  const totalVal=cards.reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+  /* Top 3 cartes les plus chères */
+  const top=[...cards].sort((a,b)=>(b.price||0)-(a.price||0)).slice(0,3);
+  /* Répartition par jeu */
+  const byGame={};
+  for(const c of cards){byGame[c.game]=(byGame[c.game]||0)+(c.quantity||1)}
+  const gameTotal=Object.values(byGame).reduce((a,b)=>a+b,0)||1;
+  const gameOrder=Object.entries(byGame).sort((a,b)=>b[1]-a[1]);
+  /* Carte la plus récente */
+  const recent=cards.slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0))[0];
+  /* HTML */
+  box.innerHTML=
+    '<div class="dash-card" style="--cc:var(--gold)"><div class="dash-label">💰 Valeur totale</div>'
+    +'<div class="dash-value gold">'+fmtEur(totalVal)+'</div>'
+    +'<div class="dash-sub">'+totalQty+' carte'+(totalQty>1?'s':'')+' • '+cards.length+' uniques</div></div>'
+    +'<div class="dash-card" style="--cc:var(--violet)"><div class="dash-label">📚 Collections</div>'
+    +'<div class="dash-value">'+(u.collections?.length||0)+'</div>'
+    +'<div class="dash-sub">'+(recent?'Dernière : '+esc(recent.name).slice(0,24):'Aucune carte')+'</div></div>'
+    +(top.length?'<div class="dash-card dash-top" style="--cc:var(--green)"><div class="dash-label">🏆 Top valeur</div>'
+      +'<div class="dash-top-list">'
+      +top.map(c=>'<div class="dash-top-item" data-act="openCardDetail" data-args="'+esc(JSON.stringify([c.id]))+'" style="cursor:pointer">'
+        +(c.image?'<img src="'+esc(c.image)+'" loading="lazy">':'')
+        +'<div><div style="font-weight:600">'+esc(c.name).slice(0,18)+(c.name.length>18?'…':'')+'</div>'
+        +'<div style="color:var(--gold-2);font-weight:700">'+fmtEur(c.price)+'</div></div></div>').join('')
+      +'</div></div>':'')
+    +(gameOrder.length>1?'<div class="dash-card dash-top" style="--cc:#7eb6ff"><div class="dash-label">🎮 Par jeu</div>'
+      +'<div class="dash-game-bar">'
+      +gameOrder.map(([g,n])=>'<span style="width:'+(n*100/gameTotal)+'%;background:'+(GAMES[g]?.color||'#888')+'"></span>').join('')
+      +'</div>'
+      +'<div class="dash-game-legend">'
+      +gameOrder.map(([g,n])=>'<span><i style="background:'+(GAMES[g]?.color||'#888')+'"></i>'+(GAMES[g]?.name||g)+' : '+n+'</span>').join('')
+      +'</div></div>':'');
+}
+
 function renderCollections(){
   const u=getUser();
   const grid=document.getElementById('collectionsGrid');
   const empty=document.getElementById('collectionsEmpty');
+  renderDashboard();
   if(!u||!u.collections||u.collections.length===0){grid.innerHTML='';empty.classList.remove('hidden');return}
   empty.classList.add('hidden');
   grid.innerHTML=u.collections.map(c=>{
@@ -2344,6 +2529,11 @@ function openCardDetail(cardId){
     +'<input id="qty_'+c.id+'" type="number" value="'+(c.quantity||1)+'" min="1" readonly style="text-align:center">'
     +'<button class="btn btn-ghost" data-act="adjQty" data-args="'+esc(JSON.stringify([c.id,1]))+'">+</button>'
     +'</div></div>'
+    +_buildBuyLinksHtml(c)
+    +'<div class="field"><label>Condition</label><select id="cd_condition">'
+    +['NM','LP','MP','HP','DMG'].map(k=>'<option value="'+k+'"'+((c.condition||'NM')===k?' selected':'')+'>'+_conditionLabel(k)+'</option>').join('')
+    +'</select><div class="hint">Mint à Damaged. Affecte la valeur (ex: LP ≈ -10%, MP ≈ -25%).</div></div>'
+    +'<div class="field"><label>Notes personnelles</label><textarea id="cd_notes" rows="2" placeholder="ex: signée, condition rare, achetée en 2023…">'+esc(c.notes||'')+'</textarea></div>'
     +'<div class="field"><label>Collection</label><select id="cd_coll">'+collOptions+'</select></div>'
     +(c.game==='mtg'||c.game==='yugioh'
       ? '<div class="field"><label>Langue de la carte</label><select id="cd_lang">'
@@ -2378,6 +2568,10 @@ function adjQty(id,d){
 function saveCardChanges(id){
   const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
   c.collectionId=document.getElementById('cd_coll').value;
+  const condSel=document.getElementById('cd_condition');
+  if(condSel){const v=condSel.value;if(v&&v!=='NM')c.condition=v;else delete c.condition}
+  const notesEl=document.getElementById('cd_notes');
+  if(notesEl){const v=notesEl.value.trim();if(v)c.notes=v;else delete c.notes}
   const foilCb=document.getElementById('cd_foil');
   const wasFoil=!!c.foil,nowFoil=foilCb?foilCb.checked:wasFoil;
   if(wasFoil!==nowFoil){
@@ -2558,18 +2752,28 @@ async function refreshAllPrices(){
 }
 
 function deleteCard(id){
-  if(!confirm('Supprimer cette carte ?'))return;
   const u=getUser();
   const c=(u.cards||[]).find(x=>x.id===id);
-  if(c){
-    const now=Date.now();
-    u.deletedCards=u.deletedCards||{};
-    u.deletedCards[id]=now;
-    u.deletedCards[cardKey(c)]=now;
-  }
+  if(!c)return;
+  const snapshot=JSON.parse(JSON.stringify(c)); /* deep clone pour undo */
+  const now=Date.now();
+  u.deletedCards=u.deletedCards||{};
+  u.deletedCards[id]=now;
+  u.deletedCards[cardKey(c)]=now;
   u.cards=(u.cards||[]).filter(x=>x.id!==id);
   touchActiveUser();
-  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Supprimée ✓','ok');
+  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+  toast(esc(snapshot.name)+' supprimée','ok',{
+    label:'↺ Annuler',
+    callback:()=>{
+      const u2=getUser();
+      delete u2.deletedCards[id];
+      delete u2.deletedCards[cardKey(snapshot)];
+      u2.cards.push(snapshot);
+      touchActiveUser();saveLocal();scheduleSync();renderCollections();renderAllCards();
+      toast('Suppression annulée','ok');
+    }
+  });
 }
 
 /* ==================== ALL CARDS ==================== */
@@ -2692,17 +2896,35 @@ function bulkSelectNone(){_cardsSelection.clear();renderAllCards()}
 
 function bulkDelete(){
   if(_cardsSelection.size===0)return;
-  if(!confirm('Supprimer définitivement '+_cardsSelection.size+' carte(s) ? Cette action est synchro entre tous tes appareils.'))return;
   const u=getUser();u.deletedCards=u.deletedCards||{};
   const ids=[..._cardsSelection];
+  /* Snapshot pour undo */
+  const snapshots=[];
+  const now=Date.now();
   for(const id of ids){
     const c=(u.cards||[]).find(x=>x.id===id);
-    if(c){u.deletedCards[id]=Date.now();if(typeof cardKey==='function')u.deletedCards[cardKey(c)]=Date.now()}
+    if(c){
+      snapshots.push(JSON.parse(JSON.stringify(c)));
+      u.deletedCards[id]=now;
+      if(typeof cardKey==='function')u.deletedCards[cardKey(c)]=now;
+    }
   }
   u.cards=(u.cards||[]).filter(c=>!_cardsSelection.has(c.id));
   _cardsSelection.clear();
   touchActiveUser();saveLocal();scheduleSync();renderCollections();renderAllCards();
-  toast(ids.length+' carte(s) supprimée(s) ✓','ok');
+  toast(ids.length+' carte(s) supprimée(s)','ok',{
+    label:'↺ Annuler',
+    callback:()=>{
+      const u2=getUser();
+      for(const s of snapshots){
+        delete u2.deletedCards[s.id];
+        delete u2.deletedCards[cardKey(s)];
+        u2.cards.push(s);
+      }
+      touchActiveUser();saveLocal();scheduleSync();renderCollections();renderAllCards();
+      toast('Restauré : '+snapshots.length+' carte(s)','ok');
+    }
+  });
 }
 
 function bulkMove(){
@@ -4944,7 +5166,8 @@ registerActions({
   switchView,
   cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport,
   applyPreset,saveTheme,resetTheme,
-  moveCard,confirmMove
+  moveCard,confirmMove,
+  backupExport,backupImportPrompt
 });
 
 /* ==================== WIRING ==================== */
@@ -4967,6 +5190,12 @@ document.getElementById('cardsSort').addEventListener('change',e=>setCardsSort(e
 document.getElementById('viewListBtn').addEventListener('click',()=>setCardsView('list'));
 document.getElementById('viewGalleryBtn').addEventListener('click',()=>setCardsView('gallery'));
 document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode);
+/* Backup file input */
+document.addEventListener('change',e=>{
+  if(e.target.id==='backupFile'&&e.target.files&&e.target.files[0]){
+    _handleBackupFile(e.target.files[0]);
+  }
+});
 ['searchName','searchSet','searchNumber'].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
