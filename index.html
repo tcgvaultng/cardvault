@@ -790,16 +790,18 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
       </div>
     </section>
 
-    <section id="view-compare" class="view">
+    <section id="view-decks" class="view">
       <div class="flex-between mb-10">
-        <h2 style="font-size:20px;color:var(--gold-2)">🎴 Decks &amp; Calculs</h2>
+        <h2 style="font-size:20px;color:var(--gold-2)">🎴 Decks</h2>
         <button class="btn btn-sm btn-violet" data-act="openNewDeck">+ Nouveau deck</button>
       </div>
       <div id="decksContent"></div>
-      <details class="advanced-filters" style="margin-top:20px">
-        <summary>📊 Comparer collections (legacy)</summary>
-        <div id="compareContent"></div>
-      </details>
+    </section>
+
+    <section id="view-compare" class="view">
+      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">⚖️ Comparer collections</h2>
+      <div class="muted mb-10">Compare la valeur et le contenu de plusieurs collections (utile pour estimer un échange).</div>
+      <div id="compareContent"></div>
     </section>
 
     <section id="view-config" class="view">
@@ -950,7 +952,8 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
     <button data-view="add"><span class="ic">➕</span><span class="lbl">Ajouter</span></button>
     <button data-view="browse"><span class="ic">🗂️</span><span class="lbl">Parcourir</span></button>
     <button data-view="cards"><span class="ic">🔎</span><span class="lbl">Cartes</span></button>
-    <button data-view="compare"><span class="ic">🎴</span><span class="lbl">Decks</span></button>
+    <button data-view="decks"><span class="ic">🎴</span><span class="lbl">Decks</span></button>
+    <button data-view="compare"><span class="ic">⚖️</span><span class="lbl">Comparer</span></button>
     <button data-view="config"><span class="ic">⚙️</span><span class="lbl">Config</span></button>
   </nav>
 </div>
@@ -1917,7 +1920,8 @@ function switchView(name){
   if(name==='collections')renderCollections();
   if(name==='browse')renderBrowse();
   if(name==='cards')renderAllCards();
-  if(name==='compare'){renderDecks();renderCompare()}
+  if(name==='decks')renderDecks();
+  if(name==='compare')renderCompare();
   if(name==='config')renderConfig();
   if(name!=='add'&&CAM_STREAM)stopCamera();
 }
@@ -2106,7 +2110,8 @@ async function autoPull(){
       const vid=document.querySelector('.view.active')?.id;
       if(vid==='view-collections')renderCollections();
       else if(vid==='view-cards')renderAllCards();
-      else if(vid==='view-compare'){renderDecks();renderCompare()}
+      else if(vid==='view-decks')renderDecks();
+      else if(vid==='view-compare')renderCompare();
       updateHeader&&updateHeader();
       _lastSyncAt=Date.now();
       setSyncStatus('✓ Sync '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),'ok');
@@ -6047,7 +6052,7 @@ window.addEventListener('resize',_hideHoverPreview);
 /* ==================== RACCOURCIS CLAVIER (desktop) ==================== */
 let _kbdGotoBuffer=null;
 let _kbdGotoTimer=null;
-const _gotoMap={c:'collections',a:'add',p:'browse',x:'cards',m:'compare',g:'config'};
+const _gotoMap={c:'collections',a:'add',p:'browse',x:'cards',d:'decks',m:'compare',g:'config'};
 
 function _focusableSearch(){
   /* Trouve l'input de recherche le plus pertinent selon la vue active */
