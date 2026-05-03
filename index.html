@@ -3001,10 +3001,9 @@ function renderDecks(){
     +'</div>';
 }
 
-function openDeck(deckId){
-  const u=_ensureDecks();if(!u)return;
-  const deck=u.decks.find(d=>d.id===deckId);
-  if(!deck){toast('Deck introuvable','err');return}
+/* Construit le HTML body du modal deck (réutilisé par openDeck et _refreshDeckModalBody) */
+function _buildDeckModalHtml(deck){
+  const u=getUser();if(!u)return '';
   const mainQty=(deck.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
   const sideQty=(deck.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
   const probaSection=_renderProbaSection(deck);
@@ -3093,8 +3092,7 @@ function openDeck(deckId){
   const totalLine=cmdrInTotal
     ?mainQty+' main + 1 commandant = <b>'+totalCount+'</b>'+(validation.rules.mainMin?' / '+(validation.rules.mainMin+1):'')+(sideQty?' · '+sideQty+' side':'')
     :mainQty+' main'+(sideQty?' · '+sideQty+' side':'');
-  openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
-    '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+totalLine+'</div>'
+  return '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+totalLine+'</div>'
     +commanderHtml
     +validationHtml
     +'<button class="btn btn-violet btn-block mb-10" data-act="addCardToDeck" data-args="'+addArgs+'">+ Ajouter une carte depuis ma collection</button>'
@@ -3103,8 +3101,14 @@ function openDeck(deckId){
     +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+(validation.rules&&validation.rules.sideMax!=null?' / '+validation.rules.sideMax:'')+')</h3>'
     +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
     +probaSection
-    +'<button class="btn btn-danger btn-block mt-10" data-act="deleteDeck" data-args="'+delArgs+'">🗑️ Supprimer ce deck</button>'
-  );
+    +'<button class="btn btn-danger btn-block mt-10" data-act="deleteDeck" data-args="'+delArgs+'">🗑️ Supprimer ce deck</button>';
+}
+
+function openDeck(deckId){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);
+  if(!deck){toast('Deck introuvable','err');return}
+  openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',_buildDeckModalHtml(deck));
 }
 
 function addCardToDeck(deckId){
@@ -3435,9 +3439,12 @@ function adjustDeckCard(deckId,cardId,bd,delta){
   e.qty=(e.qty||1)+delta;
   if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
   deck.updatedAt=Date.now();touchActiveUser();saveLocalDebounced();scheduleSync();
-  const inPicker=!!document.getElementById('dk_pickList');
-  if(inPicker){
+  /* Refresh ciblé selon le contexte */
+  if(document.getElementById('dk_pickList')){
     _updatePickerRow(deck,cardId);
+  } else if(document.querySelector('#__modal [data-act="addCardToDeck"]')){
+    /* On est dans le modal détail du deck → refresh le body en place (sans close/open) */
+    _refreshDeckModalBody(deck);
   } else {
     closeModal();
     setTimeout(()=>openDeck(deckId),50);
@@ -3448,8 +3455,26 @@ function removeDeckCard(deckId,cardId,bd){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   deck[bd]=(deck[bd]||[]).filter(e=>e.cardId!==cardId);
-  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  closeModal();setTimeout(()=>openDeck(deckId),50);
+  deck.updatedAt=Date.now();touchActiveUser();saveLocalDebounced();scheduleSync();
+  if(document.querySelector('#__modal [data-act="addCardToDeck"]')){
+    _refreshDeckModalBody(deck);
+  } else {
+    closeModal();setTimeout(()=>openDeck(deckId),50);
+  }
+}
+
+/* Refresh in-place du contenu du modal deck (.modal-body innerHTML) sans
+   closeModal+openModal. Préserve la position de scroll de la modal. */
+function _refreshDeckModalBody(deck){
+  const body=document.querySelector('#__modal .modal-body');
+  if(!body){openDeck(deck.id);return}
+  const scrollTop=body.scrollTop||document.querySelector('#__modal .modal')?.scrollTop||0;
+  /* Construit le HTML comme dans openDeck mais sans openModal */
+  body.innerHTML=_buildDeckModalHtml(deck);
+  /* Restaure le scroll */
+  const modal=document.querySelector('#__modal .modal');
+  if(modal)modal.scrollTop=scrollTop;
+  if(body.scrollTop!==undefined)body.scrollTop=scrollTop;
 }
 
 function deleteDeck(deckId){
