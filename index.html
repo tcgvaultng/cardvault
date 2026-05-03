@@ -7292,14 +7292,21 @@ function _registerServiceWorker(){
   if(!('serviceWorker' in navigator))return;
   /* Désactivable via STATE.config.disableSW si l'utilisateur a des problèmes */
   if(STATE.config&&STATE.config.disableSW)return;
+  /* Auto-reload quand un nouveau SW prend le contrôle (= nouvelle version dispo) */
+  let _swReloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(_swReloading)return;_swReloading=true;
+    toast('🔄 Nouvelle version chargée — rechargement…','ok');
+    setTimeout(()=>window.location.reload(),600);
+  });
   navigator.serviceWorker.register('./sw.js').then(reg=>{
-    /* Si nouvelle version, propose de skip waiting */
+    /* Force une vérif immédiate du SW (sinon parfois cache pendant des heures) */
+    try{reg.update()}catch(_){}
     reg.addEventListener('updatefound',()=>{
       const nw=reg.installing;
       if(!nw)return;
       nw.addEventListener('statechange',()=>{
         if(nw.state==='installed'&&navigator.serviceWorker.controller){
-          /* Nouvelle version dispo : on prévient mais skip silencieusement */
           nw.postMessage({type:'SKIP_WAITING'});
         }
       });
