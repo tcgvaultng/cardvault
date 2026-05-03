@@ -3513,6 +3513,72 @@ function deleteDeck(deckId){
   toast('Deck supprimé','ok');
 }
 
+/* === Mana curve : 2 modes (bars horizontales / histogramme vertical) === */
+function _renderManaCurveBars(curve){
+  const maxBar=Math.max(...Object.values(curve),1);
+  let html='';
+  for(const k of [0,1,2,3,4,5,6,'7+']){
+    const c=curve[k];
+    const pct=Math.round(c*100/maxBar);
+    html+='<div class="curve-row"><span class="curve-label">'+k+'</span><div class="curve-bar-wrap"><div class="curve-bar" style="width:'+pct+'%"></div></div><span class="curve-val">'+c+'</span></div>';
+  }
+  return html;
+}
+function _renderManaCurveChart(curve){
+  const maxBar=Math.max(...Object.values(curve),1);
+  const W=420,H=180,padX=20,padY=24,gap=4;
+  const keys=[0,1,2,3,4,5,6,'7+'];
+  const slot=(W-2*padX)/keys.length;
+  const barW=slot-gap;
+  const chartH=H-padY-30;
+  let bars='',labels='',values='';
+  /* Grid horizontal lines (4 lignes) */
+  let grid='';
+  for(let i=0;i<=4;i++){
+    const y=padY+chartH*(i/4);
+    const v=Math.round(maxBar*(1-i/4));
+    grid+='<line x1="'+padX+'" y1="'+y+'" x2="'+(W-padX)+'" y2="'+y+'" stroke="rgba(255,255,255,.05)" stroke-width="1"/>';
+    grid+='<text x="'+(padX-5)+'" y="'+(y+3)+'" text-anchor="end" font-size="9" fill="rgba(255,255,255,.4)">'+v+'</text>';
+  }
+  keys.forEach((k,i)=>{
+    const c=curve[k];
+    const barH=maxBar>0?(c/maxBar)*chartH:0;
+    const x=padX+i*slot+gap/2;
+    const y=padY+chartH-barH;
+    bars+='<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+barH+'" fill="url(#curveGrad)" rx="3"/>';
+    if(c>0)values+='<text x="'+(x+barW/2)+'" y="'+(y-4)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--gold-2)">'+c+'</text>';
+    labels+='<text x="'+(x+barW/2)+'" y="'+(H-8)+'" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)" font-family="\'Cinzel\',serif">'+k+'</text>';
+  });
+  /* Polyline reliant les sommets pour effet "courbe" */
+  let line='';
+  const points=keys.map((k,i)=>{
+    const c=curve[k];
+    const barH=maxBar>0?(c/maxBar)*chartH:0;
+    const x=padX+i*slot+slot/2;
+    const y=padY+chartH-barH;
+    return x+','+y;
+  }).join(' ');
+  line='<polyline points="'+points+'" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:480px;height:auto;display:block;margin:6px auto">'
+    +'<defs><linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0" stop-color="#c9a04b"/><stop offset="1" stop-color="#7b3ed8"/></linearGradient></defs>'
+    +grid+bars+line+values+labels
+    +'</svg>';
+}
+function setManaCurveMode(mode){
+  window._manaCurveMode=mode;
+  localStorage.setItem('cardvault_curveMode',mode);
+  /* Refresh modal deck si ouvert */
+  const u=getUser();const deckBtn=document.querySelector('#__modal [data-act="addCardToDeck"]');
+  if(deckBtn){
+    try{
+      const args=JSON.parse(deckBtn.dataset.args);
+      const deck=u.decks.find(d=>d.id===args[0]);
+      if(deck)_refreshDeckModalBody(deck);
+    }catch(_){}
+  }
+}
+
 /* === Stats deck (mana curve, types, couleurs, valeur) === */
 function _renderDeckStats(deck){
   const u=getUser();if(!u)return '';
@@ -3551,15 +3617,15 @@ function _renderDeckStats(deck){
       totalCmc+=cmc*qty;
       countWithCmc+=qty;
     }
-    const maxBar=Math.max(...Object.values(curve),1);
-    let curveHtml='';
-    for(const k of [0,1,2,3,4,5,6,'7+']){
-      const c=curve[k];
-      const pct=Math.round(c*100/maxBar);
-      curveHtml+='<div class="curve-row"><span class="curve-label">'+k+'</span><div class="curve-bar-wrap"><div class="curve-bar" style="width:'+pct+'%"></div></div><span class="curve-val">'+c+'</span></div>';
-    }
+    const mode=window._manaCurveMode||localStorage.getItem('cardvault_curveMode')||'chart';
+    const curveHtml=mode==='chart'?_renderManaCurveChart(curve):_renderManaCurveBars(curve);
     html+='<div class="stat-card stat-card-wide">'
-      +'<div class="stat-title">⛰ Courbe de mana</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<div class="stat-title" style="margin-bottom:0">⛰ Courbe de mana</div>'
+      +'<div class="cards-view-toggle" style="padding:1px">'
+      +'<button data-act="setManaCurveMode" data-args="[&quot;chart&quot;]" class="'+(mode==='chart'?'active':'')+'" title="Histogramme vertical" style="padding:4px 10px;min-height:28px;font-size:11px">📊 Chart</button>'
+      +'<button data-act="setManaCurveMode" data-args="[&quot;bars&quot;]" class="'+(mode==='bars'?'active':'')+'" title="Barres horizontales" style="padding:4px 10px;min-height:28px;font-size:11px">▤ Liste</button>'
+      +'</div></div>'
       +curveHtml
       +(countWithCmc>0?'<div class="stat-sub">CMC moyen <b>'+(totalCmc/countWithCmc).toFixed(2)+'</b> · '+countWithCmc+' cartes (terrains exclus si pas de CMC)</div>':'')
       +'</div>';
@@ -7191,7 +7257,7 @@ registerActions({
   toggleWishlist,setCardsMode,
   installPwa,
   openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,finishDeckPicker,
-  chooseCommander,setCommander,clearCommander,enrichMtgCards,
+  chooseCommander,setCommander,clearCommander,enrichMtgCards,setManaCurveMode,
   setDecksSort,setDecksGameFilter,toggleDecksColor,clearDecksColors,setDecksColorMode
 });
 
