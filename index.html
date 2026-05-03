@@ -791,8 +791,15 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
     </section>
 
     <section id="view-compare" class="view">
-      <h2 style="font-size:20px;color:var(--gold-2)" class="mb-14">Comparer</h2>
-      <div id="compareContent"></div>
+      <div class="flex-between mb-10">
+        <h2 style="font-size:20px;color:var(--gold-2)">🎴 Decks &amp; Calculs</h2>
+        <button class="btn btn-sm btn-violet" data-act="openNewDeck">+ Nouveau deck</button>
+      </div>
+      <div id="decksContent"></div>
+      <details class="advanced-filters" style="margin-top:20px">
+        <summary>📊 Comparer collections (legacy)</summary>
+        <div id="compareContent"></div>
+      </details>
     </section>
 
     <section id="view-config" class="view">
@@ -943,7 +950,7 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
     <button data-view="add"><span class="ic">➕</span><span class="lbl">Ajouter</span></button>
     <button data-view="browse"><span class="ic">🗂️</span><span class="lbl">Parcourir</span></button>
     <button data-view="cards"><span class="ic">🔎</span><span class="lbl">Cartes</span></button>
-    <button data-view="compare"><span class="ic">⚖️</span><span class="lbl">Comp.</span></button>
+    <button data-view="compare"><span class="ic">🎴</span><span class="lbl">Decks</span></button>
     <button data-view="config"><span class="ic">⚙️</span><span class="lbl">Config</span></button>
   </nav>
 </div>
@@ -1910,7 +1917,7 @@ function switchView(name){
   if(name==='collections')renderCollections();
   if(name==='browse')renderBrowse();
   if(name==='cards')renderAllCards();
-  if(name==='compare')renderCompare();
+  if(name==='compare'){renderDecks();renderCompare()}
   if(name==='config')renderConfig();
   if(name!=='add'&&CAM_STREAM)stopCamera();
 }
@@ -2099,7 +2106,7 @@ async function autoPull(){
       const vid=document.querySelector('.view.active')?.id;
       if(vid==='view-collections')renderCollections();
       else if(vid==='view-cards')renderAllCards();
-      else if(vid==='view-compare')renderCompare();
+      else if(vid==='view-compare'){renderDecks();renderCompare()}
       updateHeader&&updateHeader();
       _lastSyncAt=Date.now();
       setSyncStatus('✓ Sync '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),'ok');
@@ -2204,6 +2211,179 @@ async function syncPull(){
 }
 
 /* ==================== COLLECTIONS ==================== */
+/* === Constructeur de decks === */
+function _ensureDecks(){const u=getUser();if(!u)return null;u.decks=u.decks||[];return u}
+
+function openNewDeck(){
+  const u=_ensureDecks();if(!u)return;
+  openModal('Nouveau deck',
+    '<div class="field"><label>Nom du deck</label><input id="dk_name" placeholder="ex: Mono-Rouge Aggro" autofocus></div>'
+    +'<div class="field"><label>Jeu</label><select id="dk_game">'
+    +Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('')
+    +'</select></div>'
+    +'<div class="field"><label>Format (optionnel)</label><input id="dk_format" placeholder="ex: Commander, Standard, EDH"></div>'
+    +'<button class="btn btn-primary btn-block" id="dk_create">✨ Créer</button>',
+    ()=>{
+      document.getElementById('dk_create').addEventListener('click',()=>{
+        const name=document.getElementById('dk_name').value.trim();
+        if(!name)return;
+        const deck={id:uid(),name,game:document.getElementById('dk_game').value,format:document.getElementById('dk_format').value.trim(),mainboard:[],sideboard:[],createdAt:Date.now(),updatedAt:Date.now()};
+        u.decks.push(deck);
+        touchActiveUser();saveLocal();scheduleSync();closeModal();
+        renderDecks();openDeck(deck.id);
+      });
+    });
+}
+
+function renderDecks(){
+  const u=_ensureDecks();if(!u)return;
+  const box=document.getElementById('decksContent');if(!box)return;
+  if(!u.decks||u.decks.length===0){
+    box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>Aucun deck</h3><p class="muted">Construis ton premier deck à partir de tes cartes.</p><button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button></div>';
+    return;
+  }
+  box.innerHTML='<div class="coll-grid">'
+    +u.decks.map(d=>{
+      const main=(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+      const side=(d.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+      const g=GAMES[d.game]||{};
+      return '<div class="coll-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
+        +'<div><div class="cc-name">'+esc(d.name)+'</div>'
+        +'<div class="cc-meta"><span>'+(g.icon||'')+' '+esc(d.format||g.name||'')+'</span><span>'+main+'+'+side+' cartes</span></div></div>'
+        +'<div class="cc-value">'+main+' main · '+side+' side</div></div>';
+    }).join('')
+    +'</div>';
+}
+
+function openDeck(deckId){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);
+  if(!deck)return;
+  const render=()=>{
+    const mainQty=(deck.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+    const sideQty=(deck.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+    /* Probabilités hypergéométriques : tirer K cartes, prob d'avoir au moins 1 carte type X (sur N copies dans deck T total) */
+    const probaSection=_renderProbaSection(deck);
+    /* Cartes mainboard */
+    const renderEntry=(e,bd)=>{
+      const c=(u.cards||[]).find(x=>x.id===e.cardId)||e.snapshot||{};
+      const qty=e.qty||1;
+      return '<div class="card-row">'
+        +imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name||'?')+'</div>'
+        +'<div class="sub">'+esc(c.set||'')+(c.number?' • #'+esc(c.number):'')+'</div></div>'
+        +'<span class="qty-pill qty-multi">'+qty+'</span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="adjustDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\',-1);return false">−</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="adjustDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\',1);return false">+</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="removeDeckCard(\''+deck.id+'\',\''+e.cardId+'\',\''+bd+'\');return false">🗑</button>'
+        +'</div>';
+    };
+    openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
+      '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
+      +'<button class="btn btn-violet btn-block mb-10" onclick="addCardToDeck(\''+deck.id+'\');return false">+ Ajouter une carte depuis ma collection</button>'
+      +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+')</h3>'
+      +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
+      +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+')</h3>'
+      +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
+      +probaSection
+      +'<button class="btn btn-danger btn-block mt-10" onclick="deleteDeck(\''+deck.id+'\');return false">🗑️ Supprimer ce deck</button>'
+    );
+  };
+  render();
+}
+
+function addCardToDeck(deckId){
+  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  const cards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
+  if(cards.length===0){toast('Aucune carte dans la collection pour ce jeu','err');return}
+  cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  openModal('Ajouter au deck — '+deck.name,
+    '<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">'
+    +'<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">'
+    +cards.map(c=>{
+      const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
+      return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
+        +imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+'</div><div class="sub">'+esc(c.set||'')+'</div></div>'
+        +'<span class="qty-pill qty-multi">'+(c.quantity||1)+'</span></div>';
+    }).join('')
+    +'</div>',
+    ()=>{
+      const inp=document.getElementById('dk_search');
+      if(inp)inp.addEventListener('input',()=>{
+        const q=inp.value.toLowerCase();
+        document.querySelectorAll('#dk_pickList .card-row').forEach(r=>{
+          const t=r.textContent.toLowerCase();
+          r.style.display=(!q||t.includes(q))?'':'none';
+        });
+      });
+    });
+}
+window._pickDeckCard=function(deckId,cardId,bd){
+  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  const card=(u.cards||[]).find(c=>c.id===cardId);if(!card)return;
+  deck[bd]=deck[bd]||[];
+  const exist=deck[bd].find(e=>e.cardId===cardId);
+  if(exist){exist.qty=(exist.qty||1)+1}
+  else deck[bd].push({cardId,qty:1,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,cmc:card.cmc,colors:card.colors,types:card.types}});
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
+  closeModal();openDeck(deckId);
+};
+window.adjustDeckCard=function(deckId,cardId,bd,delta){
+  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  const arr=deck[bd]||[];const e=arr.find(x=>x.cardId===cardId);if(!e)return;
+  e.qty=(e.qty||1)+delta;
+  if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();openDeck(deckId);
+};
+window.removeDeckCard=function(deckId,cardId,bd){
+  const u=_ensureDecks();const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  deck[bd]=(deck[bd]||[]).filter(e=>e.cardId!==cardId);
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();openDeck(deckId);
+};
+window.deleteDeck=function(deckId){
+  if(!confirm('Supprimer ce deck ?'))return;
+  const u=_ensureDecks();u.decks=(u.decks||[]).filter(d=>d.id!==deckId);
+  touchActiveUser();saveLocal();scheduleSync();closeModal();renderDecks();
+};
+
+/* === Probabilités hypergéométriques (deck) === */
+function _hypergeometric(N,K,n,k){
+  /* P(X = k) où X ~ Hyp(N, K, n) : tirer k succès parmi K dans une main de n cartes sur N total */
+  function binomial(a,b){if(b<0||b>a)return 0;if(b===0||b===a)return 1;b=Math.min(b,a-b);let r=1;for(let i=0;i<b;i++)r=r*(a-i)/(i+1);return r}
+  return binomial(K,k)*binomial(N-K,n-k)/binomial(N,n);
+}
+function _hypergeoCumul(N,K,n,kMin){
+  /* P(X >= kMin) */
+  let p=0;for(let k=kMin;k<=Math.min(K,n);k++)p+=_hypergeometric(N,K,n,k);return p;
+}
+function _renderProbaSection(deck){
+  const main=deck.mainboard||[];
+  const total=main.reduce((s,e)=>s+(e.qty||1),0);
+  if(total<10)return '';
+  /* Group by name pour calcul */
+  const byName={};
+  for(const e of main){
+    const c=e.snapshot||{};
+    const key=c.name||e.cardId;
+    byName[key]=(byName[key]||0)+(e.qty||1);
+  }
+  const handSize=deck.game==='mtg'?7:6;
+  const probas=Object.entries(byName).filter(([,n])=>n>0).map(([name,k])=>{
+    const p1=_hypergeoCumul(total,k,handSize,1);
+    const p2=k>=2?_hypergeoCumul(total,k,handSize,2):0;
+    return {name,k,p1,p2};
+  }).sort((a,b)=>b.k-a.k).slice(0,8);
+  return '<h3 style="color:var(--gold-2);margin:14px 0 8px">🎲 Probabilités de tirage (main de '+handSize+')</h3>'
+    +'<div class="muted mb-10" style="font-size:12px">Sur '+total+' cartes au mainboard</div>'
+    +'<div style="display:grid;grid-template-columns:1fr auto auto;gap:6px 12px;font-size:12px;align-items:center">'
+    +'<div style="font-weight:700;color:var(--text-dim)">Carte (×N)</div><div style="font-weight:700;color:var(--text-dim);text-align:right">≥1</div><div style="font-weight:700;color:var(--text-dim);text-align:right">≥2</div>'
+    +probas.map(p=>'<div>'+esc(p.name).slice(0,30)+' <span class="muted">×'+p.k+'</span></div>'
+      +'<div style="text-align:right;color:var(--gold-2);font-weight:700">'+(p.p1*100).toFixed(1)+'%</div>'
+      +'<div style="text-align:right;color:var(--gold-2);font-weight:700">'+(p.k>=2?(p.p2*100).toFixed(1)+'%':'—')+'</div>').join('')
+    +'</div>';
+}
+
 /* === Cache d'images en IndexedDB (offline + perf) === */
 const IMG_CACHE_STORE='img_cache';
 let _imgCacheDB=null;
@@ -5703,7 +5883,9 @@ registerActions({
   moveCard,confirmMove,
   backupExport,backupImportPrompt,
   toggleWishlist,setCardsMode,
-  installPwa
+  installPwa,
+  openNewDeck,openDeck,
+  _pickDeckCardAction:(deckId,cardId,bd)=>window._pickDeckCard(deckId,cardId,bd)
 });
 
 /* ==================== WIRING ==================== */
