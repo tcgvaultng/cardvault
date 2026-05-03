@@ -2694,19 +2694,34 @@ function _computeDeckIdentity(deck){
   }
   return [];
 }
-/* Types Pokémon avec couleur officielle + icône */
+/* Types Pokémon avec couleur officielle + SVG icône (logo TCG approximé) */
 const POKEMON_TYPES={
-  Fire:{label:'Feu',color:'#e85a3c',icon:'🔥'},
-  Water:{label:'Eau',color:'#4faff7',icon:'💧'},
-  Grass:{label:'Plante',color:'#7ac74c',icon:'🌿'},
-  Lightning:{label:'Électrique',color:'#f4d03f',icon:'⚡'},
-  Psychic:{label:'Psy',color:'#a04dab',icon:'🔮'},
-  Fighting:{label:'Combat',color:'#c66f3a',icon:'👊'},
-  Darkness:{label:'Obscurité',color:'#2c2c2c',icon:'🌑'},
-  Metal:{label:'Métal',color:'#8a8da3',icon:'⚙️'},
-  Fairy:{label:'Fée',color:'#ec4899',icon:'🧚'},
-  Dragon:{label:'Dragon',color:'#c19433',icon:'🐉'},
-  Colorless:{label:'Incolore',color:'#bdbdbd',icon:'○'},
+  Fire:{label:'Feu',color:'#ed4d52'},
+  Water:{label:'Eau',color:'#4cb1f0'},
+  Grass:{label:'Plante',color:'#7ac74c'},
+  Lightning:{label:'Électrique',color:'#f5c842'},
+  Psychic:{label:'Psy',color:'#9d62b0'},
+  Fighting:{label:'Combat',color:'#c66f3a'},
+  Darkness:{label:'Obscurité',color:'#1f1f1f'},
+  Metal:{label:'Métal',color:'#9099a0'},
+  Fairy:{label:'Fée',color:'#ec99c8'},
+  Dragon:{label:'Dragon',color:'#c19a3a'},
+  Colorless:{label:'Incolore',color:'#dcdcdc'},
+};
+/* SVG officiels Pokémon TCG énergies (versions simplifiées, copyright Pokemon Co.
+   utilisées en fair-use pour identification). Symbole blanc sur fond coloré rond. */
+const POKEMON_ENERGY_SVG={
+  Fire:'<path d="M64 12c-6 16-22 30-22 50a22 22 0 0044 0c0-7-3-15-8-21 2 12-8 14-8 6 0-10 6-22-6-35z"/>',
+  Water:'<path d="M64 14C44 36 30 56 30 76a34 34 0 0068 0c0-20-14-40-34-62z"/>',
+  Grass:'<path d="M30 34C30 70 50 100 64 116c14-16 34-46 34-82-12 8-22 12-34 12s-22-4-34-12zM64 36c-6 6-12 22-12 38 4-12 8-22 12-30 4 8 8 18 12 30 0-16-6-32-12-38z" fill-rule="evenodd"/>',
+  Lightning:'<path d="M76 8L36 70h22l-8 50 40-62H68l8-50z"/>',
+  Psychic:'<circle cx="64" cy="40" r="14"/><circle cx="40" cy="74" r="12"/><circle cx="88" cy="74" r="12"/><circle cx="64" cy="98" r="12"/>',
+  Fighting:'<path d="M64 16L26 56h22v52h32V56h22z"/><circle cx="64" cy="48" r="10"/>',
+  Darkness:'<path d="M64 14a50 50 0 100 100 50 50 0 000-100zm0 18a32 32 0 110 64 32 32 0 010-64z"/><circle cx="64" cy="64" r="14"/>',
+  Metal:'<path d="M64 14L24 38v52l40 24 40-24V38zm0 14l28 17v34l-28 17-28-17V45z"/><circle cx="64" cy="62" r="12"/>',
+  Fairy:'<path d="M64 12l8 22 24 4-18 16 4 24-18-12-18 12 4-24-18-16 24-4z"/>',
+  Dragon:'<path d="M64 14c-22 0-40 22-40 50s18 50 40 50 40-22 40-50S86 14 64 14zm-14 30a6 6 0 110 12 6 6 0 010-12zm28 0a6 6 0 110 12 6 6 0 010-12zM44 76c12 14 28 14 40 0v8c0 12-8 22-20 22s-20-10-20-22z"/>',
+  Colorless:'<circle cx="64" cy="64" r="42" fill="none" stroke-width="14"/>',
 };
 
 /* Symboles d'identité par jeu */
@@ -2724,7 +2739,12 @@ function _renderIdentitySymbol(game,sym,size){
   }
   if(game==='pokemon'){
     const t=POKEMON_TYPES[sym]||{};
-    return '<span class="pkm-type" title="'+esc(t.label||sym)+'" style="display:inline-flex;align-items:center;justify-content:center;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(t.color||'#888')+';color:#fff;font-size:'+Math.round(size*0.55)+'px;line-height:1">'+(t.icon||(sym[0]||'?'))+'</span>';
+    const svgPath=POKEMON_ENERGY_SVG[sym]||'<circle cx="64" cy="64" r="40"/>';
+    /* Symbole blanc sur fond coloré rond */
+    const fg=sym==='Colorless'?'#666':'#fff';
+    return '<span class="pkm-type" title="'+esc(t.label||sym)+'" style="display:inline-flex;align-items:center;justify-content:center;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(t.color||'#888')+';line-height:0;flex-shrink:0">'
+      +'<svg viewBox="0 0 128 128" width="'+Math.round(size*0.65)+'" height="'+Math.round(size*0.65)+'" fill="'+fg+'" stroke="'+fg+'">'+svgPath+'</svg>'
+      +'</span>';
   }
   return '';
 }
