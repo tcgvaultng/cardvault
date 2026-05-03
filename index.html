@@ -314,23 +314,31 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 img.err-hide{visibility:hidden}
 
 /* === Decks grid avec carte vedette === */
-.decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-@media (min-width:1100px){.decks-grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}}
-.deck-card{position:relative;background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;display:flex;flex-direction:column}
+.decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+@media (min-width:1100px){.decks-grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}}
+.deck-card{position:relative;background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;display:flex;flex-direction:row;min-height:120px}
 .deck-card::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--cc,var(--violet)) 0%,transparent 70%);opacity:.12;pointer-events:none;z-index:0}
-.deck-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.5)}
-.deck-card .deck-featured{position:relative;aspect-ratio:5/7;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
-.deck-card .deck-featured img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}
-.deck-card .deck-featured.deck-featured-placeholder{font-size:48px;color:var(--text-mute);background:var(--panel)}
-.deck-card .deck-feat-label{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.85);color:var(--gold-2);font-size:10px;font-weight:700;padding:4px 8px;border-radius:6px;letter-spacing:.04em;text-transform:uppercase;font-family:'Cinzel',serif;backdrop-filter:blur(4px);z-index:2}
-.deck-card .deck-info{position:relative;z-index:1;padding:12px 14px;flex:1;display:flex;flex-direction:column;gap:4px}
-.deck-card .deck-name{font-family:'Cinzel',serif;font-weight:700;font-size:16px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck-card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.5)}
+.deck-card .deck-featured{position:relative;flex:0 0 80px;width:80px;background:#000;display:flex;align-items:center;justify-content:center;padding:6px}
+.deck-card .deck-featured img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+.deck-card .deck-featured.deck-featured-placeholder{font-size:32px;color:var(--text-mute);background:var(--panel)}
+.deck-card .deck-feat-label{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.85);color:var(--gold-2);font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;letter-spacing:.04em;font-family:'Cinzel',serif;z-index:2}
+.deck-card .deck-info{position:relative;z-index:1;padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.deck-card .deck-name{font-family:'Cinzel',serif;font-weight:700;font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .deck-card .deck-meta{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.deck-card .deck-stats{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-top:6px}
+.deck-card .deck-identity{display:flex;gap:3px;align-items:center;font-size:14px;letter-spacing:1px;margin:2px 0}
+.deck-card .deck-identity .id-pip{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:700;border:1px solid rgba(0,0,0,.3)}
+.deck-card .deck-identity .id-pip.W{background:#fffbd5;color:#444}
+.deck-card .deck-identity .id-pip.U{background:#0e68ab;color:#fff}
+.deck-card .deck-identity .id-pip.B{background:#1a1a1a;color:#fff}
+.deck-card .deck-identity .id-pip.R{background:#d3202a;color:#fff}
+.deck-card .deck-identity .id-pip.G{background:#00733e;color:#fff}
+.deck-card .deck-identity .id-pip.C{background:#888;color:#fff}
+.deck-card .deck-stats{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-top:auto}
 body.theme-retro .deck-card{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:1px 1px 0 #808080}
 body.theme-retro .deck-card::before{display:none}
 body.theme-retro .deck-card:hover{transform:none}
-body.theme-retro .deck-card .deck-feat-label{background:#000080;color:#fff;font-family:inherit!important;border-radius:0;border:1px solid #fff}
+body.theme-retro .deck-card .deck-feat-label{background:#000080;color:#fff;font-family:inherit!important;border-radius:0}
 body.theme-retro .deck-card .deck-name{color:#000;font-family:inherit!important}
 
 /* === Commander picker sections === */
@@ -2627,6 +2635,23 @@ function openNewDeck(){
     });
 }
 
+/* Calcule l'identité couleur du deck : commander si Commander format,
+   sinon union des color_identity de toutes les cartes mainboard+side. */
+function _computeDeckIdentity(deck){
+  if(deck.commander&&deck.commander.snapshot?.colorIdentity)return [...deck.commander.snapshot.colorIdentity];
+  const set=new Set();
+  for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
+    const ci=e.snapshot?.colorIdentity||e.snapshot?.colors||[];
+    if(Array.isArray(ci))ci.forEach(c=>set.add(c));
+  }
+  return [...set];
+}
+function _identityPipsHtml(colors){
+  if(!colors||colors.length===0)return '<span class="id-pip C" title="Incolore">C</span>';
+  const order={W:1,U:2,B:3,R:4,G:5};
+  return colors.slice().sort((a,b)=>(order[a]||9)-(order[b]||9)).map(c=>'<span class="id-pip '+c+'" title="'+c+'">'+c+'</span>').join('');
+}
+
 function renderDecks(){
   const u=_ensureDecks();if(!u)return;
   const box=document.getElementById('decksContent');if(!box)return;
@@ -2639,31 +2664,32 @@ function renderDecks(){
       const main=(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const side=(d.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const g=GAMES[d.game]||{};
-      /* Carte vedette : commandant si défini, sinon carte la plus chère du mainboard, sinon 1ère carte */
       let featured=null,featuredLabel='';
       if(d.commander&&d.commander.snapshot){
-        featured=d.commander.snapshot;featuredLabel='👑 Commandant';
+        featured=d.commander.snapshot;featuredLabel='👑';
       } else if((d.mainboard||[]).length>0){
-        /* Trouve la carte la plus chère parmi les snapshots */
-        const entries=d.mainboard;
-        const enriched=entries.map(e=>{
+        const enriched=d.mainboard.map(e=>{
           const live=(u.cards||[]).find(c=>c.id===e.cardId);
           return {snap:e.snapshot||live||{},price:(live&&live.price)||0};
         });
         enriched.sort((a,b)=>b.price-a.price);
-        featured=enriched[0].snap;featuredLabel='⭐ Carte maîtresse';
+        featured=enriched[0].snap;featuredLabel='⭐';
       }
       const featuredHtml=featured&&featured.image
         ? '<div class="deck-featured"><img src="'+esc(featured.image)+'" loading="lazy" alt="">'
           +'<div class="deck-feat-label">'+featuredLabel+'</div></div>'
-        : '<div class="deck-featured deck-featured-placeholder"><div>🎴</div></div>';
+        : '<div class="deck-featured deck-featured-placeholder">🎴</div>';
       const validation=validateDeck(d);
-      const status=validation.rules?(validation.ok?'<span style="color:#5cd17e">✓ Légal</span>':'<span style="color:#e05a5a">⚠️ '+validation.msgs.length+'</span>'):'';
+      const status=validation.rules?(validation.ok?'<span style="color:#5cd17e">✓</span>':'<span style="color:#e05a5a">⚠️ '+validation.msgs.length+'</span>'):'';
+      /* Identité couleur du deck */
+      const identity=d.game==='mtg'?_computeDeckIdentity(d):[];
+      const identityHtml=d.game==='mtg'?'<div class="deck-identity">'+_identityPipsHtml(identity)+'</div>':'';
       return '<div class="deck-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
         +featuredHtml
         +'<div class="deck-info">'
         +'<div class="deck-name">'+esc(d.name)+'</div>'
-        +'<div class="deck-meta">'+(g.icon||'')+' '+esc(d.format||g.name||'')+(featured&&featured.name?' · '+esc(featured.name):'')+'</div>'
+        +'<div class="deck-meta">'+(g.icon||'')+' '+esc(d.format||g.name||'')+'</div>'
+        +identityHtml
         +'<div class="deck-stats"><span>📚 '+main+' main</span>'+(side?'<span>📋 '+side+' side</span>':'')+(status?'<span>'+status+'</span>':'')+'</div>'
         +'</div></div>';
     }).join('')
