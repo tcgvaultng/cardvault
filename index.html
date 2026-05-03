@@ -957,6 +957,27 @@ body.theme-retro .card-row .nm span[style*="linear-gradient"]{background:#fff!im
         <h2 style="font-size:20px;color:var(--gold-2)">🎴 Decks</h2>
         <button class="btn btn-sm btn-violet" data-act="openNewDeck">+ Nouveau deck</button>
       </div>
+      <div class="cards-toolbar">
+        <input id="filterDecks" placeholder="🔍 Filtrer par nom...">
+        <select id="decksSort" title="Trier">
+          <option value="updated-desc">📅 Récemment modifié</option>
+          <option value="created-desc">🆕 Plus récent</option>
+          <option value="created-asc">📜 Plus ancien</option>
+          <option value="name">↕ Nom A-Z</option>
+          <option value="name-desc">↕ Nom Z-A</option>
+          <option value="game">🎮 Par jeu</option>
+          <option value="format">📋 Par format</option>
+          <option value="size">📚 Taille (mainboard)</option>
+          <option value="status">✓ Statut (légal d'abord)</option>
+        </select>
+        <select id="decksGameFilter" title="Filtrer par jeu">
+          <option value="all">🎮 Tous jeux</option>
+          <option value="mtg">🃏 Magic</option>
+          <option value="pokemon">🐉 Pokémon</option>
+          <option value="onepiece">🏴‍☠️ One Piece</option>
+          <option value="yugioh">🃎 Yu-Gi-Oh!</option>
+        </select>
+      </div>
       <div id="decksContent"></div>
     </section>
 
@@ -2654,36 +2675,69 @@ function _identityPipsHtml(colors){
     .map(c=>'<img src="'+url(c)+'" alt="'+c+'" title="'+c+'">').join('');
 }
 
+/* Filtre + tri persistés */
+let _decksSort=localStorage.getItem('cardvault_decksSort')||'updated-desc';
+let _decksGameFilter=localStorage.getItem('cardvault_decksGameFilter')||'all';
+function setDecksSort(v){_decksSort=v;localStorage.setItem('cardvault_decksSort',v);renderDecks()}
+function setDecksGameFilter(v){_decksGameFilter=v;localStorage.setItem('cardvault_decksGameFilter',v);renderDecks()}
+
+function _sortDecks(decks,sort){
+  const sizeOf=d=>(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
+  const cmp={
+    'updated-desc':(a,b)=>(b.updatedAt||0)-(a.updatedAt||0),
+    'created-desc':(a,b)=>(b.createdAt||0)-(a.createdAt||0),
+    'created-asc':(a,b)=>(a.createdAt||0)-(b.createdAt||0),
+    'name':(a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}),
+    'name-desc':(a,b)=>b.name.localeCompare(a.name,'fr',{sensitivity:'base'}),
+    'game':(a,b)=>(a.game||'').localeCompare(b.game||'')||a.name.localeCompare(b.name),
+    'format':(a,b)=>(a.format||'').localeCompare(b.format||'')||a.name.localeCompare(b.name),
+    'size':(a,b)=>sizeOf(b)-sizeOf(a),
+    'status':(a,b)=>{
+      const va=validateDeck(a),vb=validateDeck(b);
+      const ra=va.rules?(va.ok?0:1):2,rb=vb.rules?(vb.ok?0:1):2;
+      return ra-rb||a.name.localeCompare(b.name);
+    },
+  }[sort]||cmp['updated-desc'];
+  return decks.sort(cmp);
+}
+
 function renderDecks(){
   const u=_ensureDecks();if(!u)return;
   const box=document.getElementById('decksContent');if(!box)return;
-  if(!u.decks||u.decks.length===0){
-    box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>Aucun deck</h3><p class="muted">Construis ton premier deck à partir de tes cartes.</p><button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button></div>';
+  /* Sync UI controls */
+  const sortSel=document.getElementById('decksSort');if(sortSel&&sortSel.value!==_decksSort)sortSel.value=_decksSort;
+  const gameSel=document.getElementById('decksGameFilter');if(gameSel&&gameSel.value!==_decksGameFilter)gameSel.value=_decksGameFilter;
+  const filt=(document.getElementById('filterDecks')?.value||'').toLowerCase();
+  /* Filtre + tri */
+  let decks=[...(u.decks||[])];
+  if(_decksGameFilter!=='all')decks=decks.filter(d=>d.game===_decksGameFilter);
+  if(filt)decks=decks.filter(d=>d.name.toLowerCase().includes(filt)||(d.format||'').toLowerCase().includes(filt));
+  _sortDecks(decks,_decksSort);
+  if(decks.length===0){
+    box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>'+(u.decks&&u.decks.length>0?'Aucun résultat':'Aucun deck')+'</h3><p class="muted">'+(u.decks&&u.decks.length>0?'Aucun deck ne correspond à tes filtres.':'Construis ton premier deck à partir de tes cartes.')+'</p>'+(u.decks&&u.decks.length===0?'<button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button>':'')+'</div>';
     return;
   }
   box.innerHTML='<div class="decks-grid">'
-    +u.decks.map(d=>{
+    +decks.map(d=>{
       const main=(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const side=(d.sideboard||[]).reduce((s,e)=>s+(e.qty||1),0);
       const g=GAMES[d.game]||{};
-      let featured=null,featuredLabel='';
+      let featured=null;
       if(d.commander&&d.commander.snapshot){
-        featured=d.commander.snapshot;featuredLabel='👑';
+        featured=d.commander.snapshot;
       } else if((d.mainboard||[]).length>0){
         const enriched=d.mainboard.map(e=>{
           const live=(u.cards||[]).find(c=>c.id===e.cardId);
           return {snap:e.snapshot||live||{},price:(live&&live.price)||0};
         });
         enriched.sort((a,b)=>b.price-a.price);
-        featured=enriched[0].snap;featuredLabel='⭐';
+        featured=enriched[0].snap;
       }
       const featuredHtml=featured&&featured.image
-        ? '<div class="deck-featured"><img src="'+esc(featured.image)+'" loading="lazy" alt="">'
-          +'<div class="deck-feat-label">'+featuredLabel+'</div></div>'
+        ? '<div class="deck-featured"><img src="'+esc(featured.image)+'" loading="lazy" alt=""></div>'
         : '<div class="deck-featured deck-featured-placeholder">🎴</div>';
       const validation=validateDeck(d);
       const status=validation.rules?(validation.ok?'<span style="color:#5cd17e">✓</span>':'<span style="color:#e05a5a">⚠️ '+validation.msgs.length+'</span>'):'';
-      /* Identité couleur du deck */
       const identity=d.game==='mtg'?_computeDeckIdentity(d):[];
       const identityHtml=d.game==='mtg'?'<div class="deck-identity">'+_identityPipsHtml(identity)+'</div>':'';
       return '<div class="deck-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
@@ -6504,7 +6558,8 @@ registerActions({
   toggleWishlist,setCardsMode,
   installPwa,
   openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,
-  chooseCommander,setCommander,clearCommander,enrichMtgCards
+  chooseCommander,setCommander,clearCommander,enrichMtgCards,
+  setDecksSort,setDecksGameFilter
 });
 
 /* ==================== WIRING ==================== */
@@ -6529,6 +6584,18 @@ document.getElementById('viewGalleryBtn').addEventListener('click',()=>setCardsV
 document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode);
 document.getElementById('modeOwnedBtn').addEventListener('click',()=>setCardsMode('owned'));
 document.getElementById('modeWishlistBtn').addEventListener('click',()=>setCardsMode('wishlist'));
+/* Decks : tri/filtre/recherche */
+{
+  const fdEl=document.getElementById('filterDecks');
+  if(fdEl){
+    let _fdDebounce=null;
+    fdEl.addEventListener('input',()=>{clearTimeout(_fdDebounce);_fdDebounce=setTimeout(renderDecks,200)});
+  }
+  const dsEl=document.getElementById('decksSort');
+  if(dsEl)dsEl.addEventListener('change',e=>setDecksSort(e.target.value));
+  const dgEl=document.getElementById('decksGameFilter');
+  if(dgEl)dgEl.addEventListener('change',e=>setDecksGameFilter(e.target.value));
+}
 /* Filtres avancés : update _advFilters et re-render */
 let _advFiltersDebounce=null;
 document.addEventListener('input',e=>{
