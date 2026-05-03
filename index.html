@@ -993,6 +993,7 @@ body.theme-retro .card-row .nm span[style*="linear-gradient"]{background:#fff!im
           <option value="yugioh">🃎 Yu-Gi-Oh!</option>
         </select>
       </div>
+      <div id="decksColorFilter" class="decks-color-filter"></div>
       <div id="decksContent"></div>
     </section>
 
@@ -2841,10 +2842,12 @@ function renderDecks(){
   const sortSel=document.getElementById('decksSort');if(sortSel&&sortSel.value!==_decksSort)sortSel.value=_decksSort;
   const gameSel=document.getElementById('decksGameFilter');if(gameSel&&gameSel.value!==_decksGameFilter)gameSel.value=_decksGameFilter;
   const filt=(document.getElementById('filterDecks')?.value||'').toLowerCase();
+  _renderDecksColorFilter();
   /* Filtre + tri */
   let decks=[...(u.decks||[])];
   if(_decksGameFilter!=='all')decks=decks.filter(d=>d.game===_decksGameFilter);
   if(filt)decks=decks.filter(d=>d.name.toLowerCase().includes(filt)||(d.format||'').toLowerCase().includes(filt));
+  decks=decks.filter(_deckMatchesColorFilter);
   _sortDecks(decks,_decksSort);
   if(decks.length===0){
     box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>'+(u.decks&&u.decks.length>0?'Aucun résultat':'Aucun deck')+'</h3><p class="muted">'+(u.decks&&u.decks.length>0?'Aucun deck ne correspond à tes filtres.':'Construis ton premier deck à partir de tes cartes.')+'</p>'+(u.decks&&u.decks.length===0?'<button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button>':'')+'</div>';
