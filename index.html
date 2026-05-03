@@ -6136,26 +6136,9 @@ function _hideHoverPreview(){
   _hoverPreviewEl.style.opacity='0';
   setTimeout(()=>{if(_hoverPreviewEl)_hoverPreviewEl.style.display='none'},150);
 }
-/* Délégation : tout .gallery-card et .card-row qui contient une img */
-document.addEventListener('mouseover',e=>{
-  const card=e.target.closest('.gallery-card,#allCardsList .card-row');
-  if(!card)return;
-  const img=card.querySelector('img');
-  if(!img||!img.src||img.classList.contains('err-hide'))return;
-  _showHoverPreview(img.src,e);
-});
-document.addEventListener('mousemove',e=>{
-  if(_hoverPreviewEl&&_hoverPreviewEl.style.display!=='none')_moveHoverPreview(e);
-});
-document.addEventListener('mouseout',e=>{
-  const card=e.target.closest('.gallery-card,#allCardsList .card-row');
-  if(!card)return;
-  /* Si on quitte vers un autre élément hors de la card, hide */
-  if(!card.contains(e.relatedTarget))_hideHoverPreview();
-});
-/* Cleanup au scroll/resize */
-window.addEventListener('scroll',_hideHoverPreview,{passive:true});
-window.addEventListener('resize',_hideHoverPreview);
+/* Hover preview désactivé sur la vue Cartes (à la demande utilisateur).
+   Les fonctions _showHoverPreview/_moveHoverPreview/_hideHoverPreview restent
+   définies au cas où on veut le réactiver plus tard sur d'autres surfaces. */
 
 /* ==================== RACCOURCIS CLAVIER (desktop) ==================== */
 let _kbdGotoBuffer=null;
