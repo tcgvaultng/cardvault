@@ -313,6 +313,13 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Commander picker sections === */
+.cmd-sec-title{font-family:'Cinzel',serif;font-size:13px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.cmd-other{margin-top:14px}
+.cmd-other summary{cursor:pointer;font-size:13px;color:var(--text-dim);padding:6px 0}
+.cmd-other summary:hover{color:var(--gold-2)}
+body.theme-retro .cmd-sec-title{color:#000080;font-family:inherit!important;font-weight:700}
+
 /* === Commander box === */
 .commander-box{background:linear-gradient(135deg,rgba(201,160,75,.1),rgba(160,102,255,.05));border:2px solid var(--gold);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px}
 .commander-box.empty{background:rgba(255,160,75,.05);border-style:dashed;border-color:var(--gold)}
@@ -2426,25 +2433,36 @@ function _identityBadge(colors){
 function chooseCommander(deckId){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
-  /* Cartes éligibles : légendaires créature/PW MTG dans la collection */
-  const cards=(u.cards||[]).filter(c=>!c.wishlist&&c.game==='mtg'&&_canBeCommander(c));
-  if(cards.length===0){
-    toast('Aucune carte légendaire MTG dans ta collection. Ajoute-en avant de choisir un commandant.','err');
+  /* Affiche TOUTES les cartes MTG : les légendaires détectées en haut,
+     puis le reste (au cas où typeLine manque dans les anciennes cartes). */
+  const all=(u.cards||[]).filter(c=>!c.wishlist&&c.game==='mtg');
+  if(all.length===0){
+    toast('Aucune carte MTG dans ta collection.','err');
     return;
   }
-  cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
-  openModal('👑 Choisir un commandant — '+deck.name,
+  const legendary=all.filter(_canBeCommander);
+  const noType=all.filter(c=>!c.typeLine);
+  const knownNotLegendary=all.filter(c=>c.typeLine&&!_canBeCommander(c));
+  legendary.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  noType.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  knownNotLegendary.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  const renderRow=(c,isLegend)=>{
+    const args=esc(JSON.stringify([deck.id,c.id]));
+    const idBadge=_identityBadge(c.colorIdentity||c.colors||[]);
+    const tag=isLegend?'<span title="Légendaire détectée" style="color:var(--gold-2);margin-left:6px">👑</span>':(c.typeLine?'':'<span title="Type inconnu - sélectionnable" style="color:var(--text-mute);margin-left:6px">?</span>');
+    return '<div class="card-row" data-act="setCommander" data-args="'+args+'">'
+      +imgTag(c.image)
+      +'<div class="info"><div class="nm">'+esc(c.name)+' '+idBadge+tag+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine):' • <i>type inconnu (clique pour MAJ)</i>')+'</div></div></div>';
+  };
+  const html=
     '<input id="cmdr_search" placeholder="🔍 Filtrer..." style="margin-bottom:10px">'
-    +'<div class="muted mb-10" style="font-size:11px">Click une carte légendaire pour la définir comme commandant. L\'identité couleur du deck sera limitée à celle du commandant.</div>'
+    +'<div class="muted mb-10" style="font-size:11px">Click une carte pour la définir comme commandant. 👑 = légendaire détectée. <b>Si ta carte n\'apparaît pas avec 👑</b>, elle peut être dans la section "Type inconnu" ci-dessous.</div>'
     +'<div id="cmdr_pickList" style="max-height:60vh;overflow-y:auto">'
-    +cards.map(c=>{
-      const args=esc(JSON.stringify([deck.id,c.id]));
-      const idBadge=_identityBadge(c.colorIdentity||c.colors||[]);
-      return '<div class="card-row" data-act="setCommander" data-args="'+args+'">'
-        +imgTag(c.image)
-        +'<div class="info"><div class="nm">'+esc(c.name)+' '+idBadge+'</div><div class="sub">'+esc(c.set||'')+' • '+esc(c.typeLine||'')+'</div></div></div>';
-    }).join('')
-    +'</div>',
+    +(legendary.length?'<div class="cmd-sec-title">👑 Légendaires détectées ('+legendary.length+')</div>'+legendary.map(c=>renderRow(c,true)).join(''):'')
+    +(noType.length?'<div class="cmd-sec-title">❓ Type inconnu — sélectionnables ('+noType.length+')</div>'+noType.map(c=>renderRow(c,false)).join(''):'')
+    +(knownNotLegendary.length?'<details class="cmd-other"><summary>Autres cartes MTG ('+knownNotLegendary.length+') — non légendaires</summary>'+knownNotLegendary.map(c=>renderRow(c,false)).join('')+'</details>':'')
+    +'</div>';
+  openModal('👑 Choisir un commandant — '+deck.name,html,
     ()=>{
       const inp=document.getElementById('cmdr_search');
       if(inp)inp.addEventListener('input',()=>{
@@ -2456,10 +2474,27 @@ function chooseCommander(deckId){
     });
 }
 
-function setCommander(deckId,cardId){
+async function setCommander(deckId,cardId){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   const card=(u.cards||[]).find(c=>c.id===cardId);if(!card)return;
+  /* Enrichit le typeLine + color_identity via Scryfall si manquant */
+  if(!card.typeLine||!card.colorIdentity){
+    try{
+      showLoader('Lookup Scryfall…');
+      const url='https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(card.name);
+      const r=await fetch(url);
+      if(r.ok){
+        const sc=await r.json();
+        if(sc.type_line)card.typeLine=sc.type_line;
+        if(sc.color_identity)card.colorIdentity=sc.color_identity;
+        if(sc.colors&&!card.colors)card.colors=sc.colors;
+        if(sc.cmc!=null&&card.cmc==null)card.cmc=sc.cmc;
+        touchCard(card);
+      }
+    }catch(e){console.warn('Scryfall lookup failed:',e)}
+    finally{hideLoader()}
+  }
   deck.commander={cardId:card.id,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,typeLine:card.typeLine,colors:card.colors||[],colorIdentity:card.colorIdentity||card.colors||[]}};
   deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
   toast('Commandant : '+esc(card.name),'ok');
