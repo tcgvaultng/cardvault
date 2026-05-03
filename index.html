@@ -2036,7 +2036,7 @@ function switchView(name){
 
 /* ==================== GIST SYNC (v6 — merge par timestamp) ==================== */
 const GIST_FILE='cardvault.json';
-const GIST_VERSION=6;
+const GIST_VERSION=7; /* v7 : ajoute decks + deletedDecks */
 const APP_VERSION='2.3.0';
 const SYNC_INTERVAL_MS=20000;
 let _pullInFlight=null;
@@ -2061,14 +2061,17 @@ function mergeOneUser(a,b){
   /* Merge des tombstones (cles -> timestamp max) */
   const dCards=mergeTombstones(a.deletedCards||{},b.deletedCards||{});
   const dColls=mergeTombstones(a.deletedCollections||{},b.deletedCollections||{});
+  const dDecks=mergeTombstones(a.deletedDecks||{},b.deletedDecks||{});
   return {
     avatar:newer.avatar||a.avatar||b.avatar||'🃏',
     createdAt:Math.min(a.createdAt||Date.now(),b.createdAt||Date.now()),
     updatedAt:Math.max(at,bt),
     collections:mergeById(a.collections||[],b.collections||[],dColls),
     cards:mergeCards(a.cards||[],b.cards||[],dCards),
+    decks:mergeById(a.decks||[],b.decks||[],dDecks),
     deletedCards:dCards,
     deletedCollections:dColls,
+    deletedDecks:dDecks,
   };
 }
 function mergeTombstones(A,B){
@@ -2497,6 +2500,8 @@ function removeDeckCard(deckId,cardId,bd){
 function deleteDeck(deckId){
   if(!confirm('Supprimer ce deck ?'))return;
   const u=_ensureDecks();if(!u)return;
+  u.deletedDecks=u.deletedDecks||{};
+  u.deletedDecks[deckId]=Date.now();
   u.decks=(u.decks||[]).filter(d=>d.id!==deckId);
   touchActiveUser();saveLocal();scheduleSync();closeModal();renderDecks();
   toast('Deck supprimé','ok');
