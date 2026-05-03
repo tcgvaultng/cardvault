@@ -1980,7 +1980,24 @@ function openModal(title,bodyHtml,onReady){
   document.body.appendChild(b);
   if(onReady)onReady();
 }
-function closeModal(){const m=document.getElementById('__modal');if(m)m.remove()}
+/* Return target : si ouverte depuis une autre modal (ex: collection),
+   on rouvre cette modal automatiquement après fermeture du card detail. */
+let _modalReturnTo=null;
+function closeModal(){
+  const m=document.getElementById('__modal');
+  /* Détecte si c'est un card detail qui se ferme */
+  const wasCardDetail=m?m.querySelector('[data-act="saveCardChanges"]'):null;
+  if(m)m.remove();
+  if(wasCardDetail&&_modalReturnTo){
+    const r=_modalReturnTo;_modalReturnTo=null;
+    setTimeout(()=>{
+      /* Skip restore si une nouvelle modal a été ouverte entre-temps
+         (ex: chooseCollectionAndAdd, deck modal, etc.) */
+      if(document.getElementById('__modal'))return;
+      if(r.type==='collection')openCollection(r.id);
+    },80);
+  }
+}
 
 /* ==================== LAUNCH / PROFILES ==================== */
 function renderLaunch(){
@@ -4419,6 +4436,12 @@ function openCardDetail(cardId){
   const u=getUser();
   const c=(u.cards||[]).find(x=>x.id===cardId);
   if(!c)return;
+  /* Si on ouvre depuis une modal collection, mémorise pour rouvrir après fermeture */
+  if(_currentOpenCollection&&document.getElementById('__modal')){
+    _modalReturnTo={type:'collection',id:_currentOpenCollection};
+  } else {
+    _modalReturnTo=null;
+  }
   const g=GAMES[c.game]||{name:c.game};
   const collOptions=u.collections.map(x=>'<option value="'+x.id+'"'+(x.id===c.collectionId?' selected':'')+'>'+esc(x.name)+'</option>').join('');
   /* Verso si carte double-face : prefere c.imageBack (upload manuel), sinon library */
