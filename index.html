@@ -133,9 +133,16 @@ body.card-dragging .coll-card{cursor:copy}
 .cards-toolbar{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
 .cards-toolbar>input{flex:1 1 220px;min-width:180px}
 .cards-toolbar>select{flex:0 1 200px;min-width:160px;cursor:pointer}
-.cards-view-toggle{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px;flex-shrink:0}
-.cards-view-toggle button{padding:6px 12px;color:var(--text-dim);border-radius:6px;min-height:36px;cursor:pointer}
+.cards-view-toggle,.cards-mode-toggle{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:2px;flex-shrink:0}
+.cards-view-toggle button,.cards-mode-toggle button{padding:6px 12px;color:var(--text-dim);border-radius:6px;min-height:36px;cursor:pointer;font-size:14px}
 .cards-view-toggle button.active{background:rgba(201,160,75,.2);color:var(--gold)}
+.cards-mode-toggle button.active[data-mode="owned"]{background:rgba(201,160,75,.2);color:var(--gold)}
+.cards-mode-toggle button.active[data-mode="wishlist"]{background:rgba(255,100,150,.2);color:#ff6b9c}
+
+/* Bouton wishlist sur card-row */
+.card-row .row-wish{flex:0 0 auto;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid transparent;border-radius:6px;font-size:18px;cursor:pointer;transition:all .15s;padding:0;font-family:inherit}
+.card-row .row-wish:hover{background:rgba(255,100,150,.1);border-color:rgba(255,100,150,.3)}
+.card-row .row-wish.active{background:rgba(255,100,150,.15)}
 #bulkToggleBtn.active{background:rgba(160,102,255,.2);color:var(--violet-2);border-color:rgba(160,102,255,.4)}
 
 /* Vue galerie style Scryfall */
@@ -305,6 +312,19 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .scan-actions>button:first-child{grid-column:1/-1} /* Démarrer caméra prend toute la ligne */
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
+
+/* === Achievements === */
+.achiev-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.achiev{padding:12px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;background:var(--panel);position:relative;transition:transform .15s,border-color .15s}
+.achiev.unlocked{border-color:var(--gold);background:linear-gradient(135deg,rgba(201,160,75,.15),rgba(160,102,255,.08))}
+.achiev.unlocked:hover{transform:translateY(-2px)}
+.achiev .ach-icon{font-size:32px;margin-bottom:4px;filter:grayscale(1) opacity(.5)}
+.achiev.unlocked .ach-icon{filter:none}
+.achiev .ach-name{font-size:12px;font-weight:600;color:var(--text-dim);font-family:'Cinzel',serif;letter-spacing:.04em}
+.achiev.unlocked .ach-name{color:var(--gold-2)}
+.achiev .ach-desc{font-size:10px;color:var(--text-mute);margin-top:4px}
+.achiev .ach-progress{height:3px;background:rgba(255,255,255,.06);border-radius:2px;margin-top:6px;overflow:hidden}
+.achiev .ach-progress span{display:block;height:100%;background:var(--gold);border-radius:2px;transition:width .3s}
 
 /* === Buy-links (Cardmarket/TCGPlayer/Scryfall) === */
 .buy-links{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 14px;justify-content:center}
@@ -714,6 +734,10 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
       </div>
       <div class="cards-toolbar">
         <input id="filterCards" placeholder="🔍 Filtrer par nom...">
+        <div class="cards-mode-toggle">
+          <button id="modeOwnedBtn" class="active" data-mode="owned" title="Cartes possédées">📚</button>
+          <button id="modeWishlistBtn" data-mode="wishlist" title="Wishlist (à acheter)">❤️</button>
+        </div>
         <select id="cardsSort" title="Trier">
           <option value="name">↕ Nom A-Z</option>
           <option value="name-desc">↕ Nom Z-A</option>
@@ -837,6 +861,17 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
         <div class="row"><div class="field"><label>Bucket</label><input id="cfgR2Bucket" placeholder="cardvault-library"></div>
         <div class="field"><label>URL publique</label><input id="cfgR2PublicUrl" placeholder="https://pub-XXX.r2.dev"></div></div>
         <button class="btn btn-primary btn-block" data-act="saveR2Config">💾 Enregistrer R2</button>
+      </div>
+      <div class="panel" id="achievementsPanel">
+        <div class="panel-title">🏆 Achievements</div>
+        <div class="muted mb-10" id="achievStats"></div>
+        <div id="achievList" class="achiev-list"></div>
+      </div>
+      <div class="panel" id="installPanel" style="display:none">
+        <div class="panel-title">📲 Installer l'application</div>
+        <div class="muted mb-10">Installe CardVault sur ton appareil pour un accès rapide hors-ligne (icône, plein écran, sans barre du navigateur).</div>
+        <button class="btn btn-primary btn-block" data-act="installPwa">📲 Installer CardVault</button>
+        <div class="hint mt-10" id="installHint"></div>
       </div>
       <div class="panel">
         <div class="panel-title">💾 Backup &amp; restauration</div>
@@ -2145,6 +2180,158 @@ async function syncPull(){
 }
 
 /* ==================== COLLECTIONS ==================== */
+/* === Achievements / Badges === */
+const ACHIEVEMENTS=[
+  {id:'first',icon:'🌱',name:'Premier pas',desc:'1 carte ajoutée',check:s=>s.totalCards>=1,goal:1,key:'totalCards'},
+  {id:'c10',icon:'📦',name:'Petit bagage',desc:'10 cartes',check:s=>s.totalCards>=10,goal:10,key:'totalCards'},
+  {id:'c100',icon:'📚',name:'Centaine',desc:'100 cartes',check:s=>s.totalCards>=100,goal:100,key:'totalCards'},
+  {id:'c500',icon:'🏛️',name:'Cathédrale',desc:'500 cartes',check:s=>s.totalCards>=500,goal:500,key:'totalCards'},
+  {id:'c1000',icon:'🎩',name:'Collectionneur',desc:'1 000 cartes',check:s=>s.totalCards>=1000,goal:1000,key:'totalCards'},
+  {id:'v100',icon:'💵',name:'Premier billet',desc:'100€ de valeur',check:s=>s.totalVal>=100,goal:100,key:'totalVal'},
+  {id:'v1k',icon:'💰',name:'Mille euros',desc:'1 000€',check:s=>s.totalVal>=1000,goal:1000,key:'totalVal'},
+  {id:'v10k',icon:'🪙',name:'Capital',desc:'10 000€',check:s=>s.totalVal>=10000,goal:10000,key:'totalVal'},
+  {id:'v100k',icon:'🏆',name:'Trésor',desc:'100 000€',check:s=>s.totalVal>=100000,goal:100000,key:'totalVal'},
+  {id:'col3',icon:'🗂️',name:'Organisé',desc:'3 collections',check:s=>s.collCount>=3,goal:3,key:'collCount'},
+  {id:'col10',icon:'📁',name:'Bibliothécaire',desc:'10 collections',check:s=>s.collCount>=10,goal:10,key:'collCount'},
+  {id:'foil1',icon:'✨',name:'Brillance',desc:'1 carte foil',check:s=>s.foilCount>=1,goal:1,key:'foilCount'},
+  {id:'foil10',icon:'🌟',name:'Étincelles',desc:'10 cartes foil',check:s=>s.foilCount>=10,goal:10,key:'foilCount'},
+  {id:'foil50',icon:'💎',name:'Vitrine foil',desc:'50 cartes foil',check:s=>s.foilCount>=50,goal:50,key:'foilCount'},
+  {id:'g3',icon:'🎮',name:'Multi-jeux',desc:'3 jeux différents',check:s=>s.gameCount>=3,goal:3,key:'gameCount'},
+  {id:'lang3',icon:'🌐',name:'Polyglotte',desc:'3 langues différentes',check:s=>s.langCount>=3,goal:3,key:'langCount'},
+  {id:'expensive',icon:'👑',name:'Pièce maîtresse',desc:'Une carte > 500€',check:s=>s.maxPrice>=500,goal:500,key:'maxPrice'},
+  {id:'wishlist1',icon:'❤️',name:'Convoité',desc:'1 carte en wishlist',check:s=>s.wishCount>=1,goal:1,key:'wishCount'},
+];
+function _computeStats(){
+  const u=getUser();if(!u)return null;
+  const cards=(u.cards||[]).filter(c=>!c.wishlist);
+  const wish=(u.cards||[]).filter(c=>c.wishlist);
+  const totalCards=cards.reduce((s,c)=>s+(c.quantity||1),0);
+  const totalVal=cards.reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+  const collCount=(u.collections||[]).length;
+  const foilCount=cards.filter(c=>c.foil).reduce((s,c)=>s+(c.quantity||1),0);
+  const games=new Set(cards.map(c=>c.game).filter(Boolean));
+  const langs=new Set(cards.map(c=>c.lang).filter(Boolean));
+  const maxPrice=cards.reduce((m,c)=>Math.max(m,c.price||0),0);
+  const wishCount=wish.length;
+  return {totalCards,totalVal,collCount,foilCount,gameCount:games.size,langCount:langs.size,maxPrice,wishCount};
+}
+function _renderAchievements(){
+  const list=document.getElementById('achievList');if(!list)return;
+  const stats=_computeStats();if(!stats)return;
+  const unlocked=ACHIEVEMENTS.filter(a=>a.check(stats));
+  const statsEl=document.getElementById('achievStats');
+  if(statsEl)statsEl.textContent=unlocked.length+' / '+ACHIEVEMENTS.length+' débloqués';
+  list.innerHTML=ACHIEVEMENTS.map(a=>{
+    const ok=a.check(stats);
+    const cur=stats[a.key]||0;
+    const pct=Math.min(100,Math.round(cur*100/a.goal));
+    return '<div class="achiev'+(ok?' unlocked':'')+'" title="'+esc(a.desc)+'">'
+      +'<div class="ach-icon">'+a.icon+'</div>'
+      +'<div class="ach-name">'+esc(a.name)+'</div>'
+      +'<div class="ach-desc">'+esc(a.desc)+'</div>'
+      +(ok?'':'<div class="ach-progress"><span style="width:'+pct+'%"></span></div>')
+      +'</div>';
+  }).join('');
+}
+
+/* === Pull-to-refresh mobile === */
+let _ptr={startY:0,curY:0,active:false,el:null};
+function _ensurePtrIndicator(){
+  if(_ptr.el)return _ptr.el;
+  const el=document.createElement('div');
+  el.id='__ptr';
+  el.style.cssText='position:fixed;top:0;left:50%;transform:translate(-50%,-60px);background:var(--surface-2);border:1px solid var(--border);border-radius:0 0 12px 12px;padding:8px 16px;font-size:12px;color:var(--text-dim);z-index:100;transition:transform .25s ease;display:flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(0,0,0,.4);pointer-events:none';
+  el.innerHTML='<span class="ptr-icon" style="display:inline-block;transition:transform .2s">↓</span><span class="ptr-text">Tirer pour rafraîchir</span>';
+  document.body.appendChild(el);
+  _ptr.el=el;
+  return el;
+}
+async function _doRefresh(){
+  /* Refresh selon la vue active */
+  const active=document.querySelector('.view.active')?.id;
+  if(active==='view-collections'){renderCollections()}
+  else if(active==='view-cards'){renderAllCards()}
+  else if(active==='view-browse'){if(typeof renderBrowse==='function')renderBrowse()}
+  /* Sync si gist configuré */
+  if(STATE.config.gistId&&typeof pullGist==='function'){
+    try{await pullGist();renderCollections();renderAllCards()}catch(_){}
+  }
+  toast('Rafraîchi ✓','ok');
+}
+document.addEventListener('touchstart',e=>{
+  if(window.scrollY>0)return;
+  _ptr.startY=e.touches[0].clientY;_ptr.curY=_ptr.startY;_ptr.active=true;
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(!_ptr.active)return;
+  _ptr.curY=e.touches[0].clientY;
+  const delta=_ptr.curY-_ptr.startY;
+  if(delta<=0||window.scrollY>0){_ptr.active=false;const el=_ptr.el;if(el)el.style.transform='translate(-50%,-60px)';return}
+  if(delta>10){
+    const el=_ensurePtrIndicator();
+    const y=Math.min(delta*0.4,80)-60;
+    el.style.transform='translate(-50%,'+y+'px)';
+    const ic=el.querySelector('.ptr-icon');
+    const tx=el.querySelector('.ptr-text');
+    if(delta>120){if(ic)ic.style.transform='rotate(180deg)';if(tx)tx.textContent='Relâche pour rafraîchir'}
+    else {if(ic)ic.style.transform='rotate(0)';if(tx)tx.textContent='Tirer pour rafraîchir'}
+  }
+},{passive:true});
+document.addEventListener('touchend',()=>{
+  if(!_ptr.active){return}
+  const delta=_ptr.curY-_ptr.startY;
+  _ptr.active=false;
+  const el=_ptr.el;
+  if(delta>120){
+    if(el){el.style.transform='translate(-50%,12px)';const tx=el.querySelector('.ptr-text');if(tx)tx.textContent='Rafraîchissement…'}
+    _doRefresh().finally(()=>{
+      setTimeout(()=>{if(el)el.style.transform='translate(-50%,-60px)'},400);
+    });
+  } else if(el){
+    el.style.transform='translate(-50%,-60px)';
+  }
+});
+
+/* === Install PWA === */
+let _deferredInstallPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  _deferredInstallPrompt=e;
+  _refreshInstallPanel();
+});
+window.addEventListener('appinstalled',()=>{
+  _deferredInstallPrompt=null;
+  toast('CardVault installé ✓','ok');
+  _refreshInstallPanel();
+});
+function _isStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+}
+function _isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.MSStream}
+function _refreshInstallPanel(){
+  const p=document.getElementById('installPanel');if(!p)return;
+  const hint=document.getElementById('installHint');
+  if(_isStandalone()){p.style.display='none';return}
+  if(_deferredInstallPrompt){
+    p.style.display='';
+    if(hint)hint.textContent='Compatible avec Chrome, Edge, Firefox (Android), Brave.';
+  } else if(_isIOS()){
+    p.style.display='';
+    if(hint)hint.innerHTML='Sur iOS Safari : appuie sur <b>Partager</b> 📤 puis <b>« Sur l\'écran d\'accueil »</b>. Le bouton ci-dessous ne fonctionne pas sur iOS.';
+  } else {
+    p.style.display='none';
+  }
+}
+async function installPwa(){
+  if(_isIOS()){toast('Sur iOS : Partager → Sur l\'écran d\'accueil','ok');return}
+  if(!_deferredInstallPrompt){toast('Installation non disponible (déjà installée ?)','err');return}
+  _deferredInstallPrompt.prompt();
+  const choice=await _deferredInstallPrompt.userChoice;
+  if(choice.outcome==='accepted')toast('Installation lancée ✓','ok');
+  _deferredInstallPrompt=null;
+  _refreshInstallPanel();
+}
+
 /* === Backup / Restore === */
 function backupExport(){
   const data={version:'cardvault-backup-1',exportedAt:new Date().toISOString(),appVersion:APP_VERSION,state:STATE};
@@ -2485,13 +2672,14 @@ function renderCardRow(c,opts){
   const qty=c.quantity||1;
   const foilTag=c.foil?'<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:linear-gradient(135deg,#ff7eb6,#7eb6ff,#7eff9b);color:#000;font-size:9px;font-weight:700;vertical-align:middle">✨ FOIL</span>':'';
   const moveBtn=opts.movable!==false?'<button type="button" class="row-move" data-act="moveCard" data-args="'+esc(JSON.stringify([c.id]))+'" title="Déplacer vers une autre collection">📁</button>':'';
+  const wishBtn=opts.wishable!==false?'<button type="button" class="row-wish'+(c.wishlist?' active':'')+'" data-act="toggleWishlist" data-args="'+esc(JSON.stringify([c.id]))+'" title="'+(c.wishlist?'Retirer de la wishlist':'Ajouter à la wishlist')+'">'+(c.wishlist?'❤️':'🤍')+'</button>':'';
   const qtyPill=qty>1?'<span class="qty-pill qty-multi" title="'+qty+' exemplaires">'+qty+'</span>':'';
   return '<div class="card-row'+sel+'" data-act="'+action+'" data-args="'+esc(JSON.stringify([c.id]))+'" draggable="true" data-card-id="'+esc(c.id)+'">'
     +imgTag(c.image)
     +'<div class="info"><div class="nm">'+esc(c.name)+foilTag+'</div>'
     +'<div class="sub"><span class="badge-dot" style="background:'+g.color+'"></span>'+esc(g.name)+(c.set?' • '+esc(c.set):'')+'</div></div>'
     +qtyPill
-    +'<div class="price">'+fmtEur(c.price)+'</div>'+moveBtn+'</div>';
+    +'<div class="price">'+fmtEur(c.price)+'</div>'+wishBtn+moveBtn+'</div>';
 }
 
 function openCardDetail(cardId){
@@ -2780,8 +2968,20 @@ function deleteCard(id){
 /* État vue Cartes : préférences persistées dans localStorage */
 let _cardsView=localStorage.getItem('cardvault_cardsView')||'list'; /* 'list' | 'gallery' */
 let _cardsSort=localStorage.getItem('cardvault_cardsSort')||'name';
+let _cardsMode='owned'; /* 'owned' | 'wishlist' */
 let _cardsBulkMode=false;
 const _cardsSelection=new Set();
+
+function toggleWishlist(id){
+  const u=getUser();const c=(u.cards||[]).find(x=>x.id===id);if(!c)return;
+  if(c.wishlist){
+    delete c.wishlist;toast(esc(c.name)+' retirée de la wishlist','ok');
+  } else {
+    c.wishlist=true;toast(esc(c.name)+' ajoutée à la wishlist ❤️','ok');
+  }
+  touchCard(c);saveLocal();scheduleSync();renderAllCards();renderDashboard();
+}
+function setCardsMode(m){_cardsMode=m;renderAllCards()}
 
 function _sortCards(cards,sort){
   const cmp={
@@ -2836,9 +3036,15 @@ function renderAllCards(){
   /* Filtre + tri */
   const f=(document.getElementById('filterCards')?.value||'').toLowerCase();
   let cards=[...(u.cards||[])];
+  /* Mode wishlist : montre uniquement les cartes wishlist=true */
+  if(_cardsMode==='wishlist')cards=cards.filter(c=>c.wishlist);
+  else cards=cards.filter(c=>!c.wishlist);
   if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
   if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f)||(c.set||'').toLowerCase().includes(f)||(c.setCode||'').toLowerCase().includes(f));
   _sortCards(cards,_cardsSort);
+  /* Sync UI mode toggle */
+  const ob=document.getElementById('modeOwnedBtn'),wb=document.getElementById('modeWishlistBtn');
+  if(ob&&wb){ob.classList.toggle('active',_cardsMode==='owned');wb.classList.toggle('active',_cardsMode==='wishlist')}
   /* Stats */
   const stats=document.getElementById('cardsStats');
   if(stats){
@@ -4973,6 +5179,8 @@ function renderConfig(){
   const jt=document.getElementById('cfgJustTcg');if(jt)jt.value=STATE.config.justTcgKey||'';
   if(STATE.config.gistId)setSyncStatus('Gist : '+STATE.config.gistId.slice(0,10)+'…');
   _renderThemePanel();
+  _refreshInstallPanel();
+  _renderAchievements();
 }
 
 /* ==================== THÈMES / APPARENCE ==================== */
@@ -5167,7 +5375,9 @@ registerActions({
   cardClick,bulkSelectAll,bulkSelectNone,bulkMove,bulkDelete,bulkExport,
   applyPreset,saveTheme,resetTheme,
   moveCard,confirmMove,
-  backupExport,backupImportPrompt
+  backupExport,backupImportPrompt,
+  toggleWishlist,setCardsMode,
+  installPwa
 });
 
 /* ==================== WIRING ==================== */
@@ -5190,6 +5400,8 @@ document.getElementById('cardsSort').addEventListener('change',e=>setCardsSort(e
 document.getElementById('viewListBtn').addEventListener('click',()=>setCardsView('list'));
 document.getElementById('viewGalleryBtn').addEventListener('click',()=>setCardsView('gallery'));
 document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode);
+document.getElementById('modeOwnedBtn').addEventListener('click',()=>setCardsMode('owned'));
+document.getElementById('modeWishlistBtn').addEventListener('click',()=>setCardsMode('wishlist'));
 /* Backup file input */
 document.addEventListener('change',e=>{
   if(e.target.id==='backupFile'&&e.target.files&&e.target.files[0]){
