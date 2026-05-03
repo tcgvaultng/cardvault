@@ -4537,7 +4537,13 @@ function saveCardChanges(id){
     return;
   }
   touchCard(c);
-  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();toast('Sauvé ✓','ok');
+  /* Préserve la position de scroll : si on revient à la vue cards, on
+     ne saute pas en haut. Si on revient à une collection (via _modalReturnTo),
+     la modal couvre l'arrière-plan donc le scroll n'a pas d'importance. */
+  const scrollY=window.scrollY;
+  saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+  requestAnimationFrame(()=>window.scrollTo(0,scrollY));
+  toast('Sauvé ✓','ok');
 }
 
 function saveCardPrice(id){
@@ -4706,7 +4712,10 @@ function deleteCard(id){
   u.deletedCards[cardKey(c)]=now;
   u.cards=(u.cards||[]).filter(x=>x.id!==id);
   touchActiveUser();
+  /* Préserve la position de scroll de la liste */
+  const scrollY=window.scrollY;
   saveLocal();scheduleSync();closeModal();renderCollections();renderAllCards();
+  requestAnimationFrame(()=>window.scrollTo(0,scrollY));
   toast(esc(snapshot.name)+' supprimée','ok',{
     label:'↺ Annuler',
     callback:()=>{
