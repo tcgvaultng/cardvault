@@ -1703,7 +1703,16 @@ function openManualAdd(){
             newCard[idField]=cardId;
             u.cards=u.cards||[];u.cards.push(newCard);
             touchActiveUser();saveLocal();scheduleSync();
-            toast('Carte ajoutée ✓','ok');
+            /* Reset des filtres qui pourraient masquer la nouvelle carte */
+            _cardsMode='owned';_gameFilter='all';
+            _advFilters={mtgColors:new Set(),mtgType:'',mtgRarity:'',mtgCmcMin:0,mtgCmcMax:99,pkmType:'',pkmRarity:'',pkmHpMin:0,pkmHpMax:999,priceMin:0,priceMax:1e9,conditionFilter:'',foilOnly:false};
+            const ftxt=document.getElementById('filterCards');if(ftxt)ftxt.value='';
+            const collName=u.collections.find(x=>x.id===cid)?.name||'Principale';
+            toast('Carte ajoutée à « '+collName+' » ✓','ok');
+            closeModal();renderCollections();renderAllCards();
+            /* Bascule sur l'onglet Mes cartes pour que l'utilisateur voie la nouvelle carte */
+            switchView('cards');
+            return;
           }
           closeModal();renderCollections();renderAllCards();
         }catch(e){status.textContent='❌ '+e.message;status.style.color='var(--red)';console.error(e)}
