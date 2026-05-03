@@ -2742,6 +2742,8 @@ function _gameIdentitySymbols(game){
   return [];
 }
 
+const POKEMON_ENERGY_CDN='https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev/energy_icons/';
+
 /* Render un symbole d'identité (un pip) selon le jeu */
 function _renderIdentitySymbol(game,sym,size){
   size=size||18;
@@ -2750,12 +2752,12 @@ function _renderIdentitySymbol(game,sym,size){
   }
   if(game==='pokemon'){
     const t=POKEMON_TYPES[sym]||{};
+    /* Icône officielle PNG hébergée sur R2 + fallback SVG si erreur 404 */
+    const url=POKEMON_ENERGY_CDN+sym+'.png';
     const svgPath=POKEMON_ENERGY_SVG[sym]||'<circle cx="64" cy="64" r="40"/>';
-    /* Symbole blanc sur fond coloré rond */
     const fg=sym==='Colorless'?'#666':'#fff';
-    return '<span class="pkm-type" title="'+esc(t.label||sym)+'" style="display:inline-flex;align-items:center;justify-content:center;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(t.color||'#888')+';line-height:0;flex-shrink:0">'
-      +'<svg viewBox="0 0 128 128" width="'+Math.round(size*0.65)+'" height="'+Math.round(size*0.65)+'" fill="'+fg+'" stroke="'+fg+'">'+svgPath+'</svg>'
-      +'</span>';
+    const fallbackSvg='<span class=\'pkm-type\' style=\'display:inline-flex;align-items:center;justify-content:center;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(t.color||'#888')+';line-height:0;flex-shrink:0\'><svg viewBox=\'0 0 128 128\' width=\''+Math.round(size*0.65)+'\' height=\''+Math.round(size*0.65)+'\' fill=\''+fg+'\' stroke=\''+fg+'\'>'+svgPath.replace(/"/g,"'")+'</svg></span>';
+    return '<img src="'+url+'" alt="'+sym+'" title="'+esc(t.label||sym)+'" loading="lazy" style="width:'+size+'px;height:'+size+'px;display:inline-block;object-fit:contain" onerror="this.outerHTML=\''+esc(fallbackSvg).replace(/'/g,'&#39;')+'\'">';
   }
   return '';
 }
