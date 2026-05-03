@@ -313,6 +313,12 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Picker deck : carte au max === */
+.picker-maxed{opacity:.6;cursor:not-allowed;background:rgba(255,200,75,.05)}
+.picker-maxed:hover{background:rgba(255,200,75,.08)}
+.picker-maxed .nm{color:var(--text-dim)}
+body.theme-retro .picker-maxed{background:#e0d8b0;opacity:1}
+
 /* === Filtre couleur (vue Decks) === */
 .decks-color-filter{margin-bottom:10px}
 .dcf-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px}
@@ -3076,12 +3082,16 @@ function _renderDeckPicker(deck,allCards,openFresh){
     const argsRm=esc(JSON.stringify([deck.id,c.id,'mainboard',-1]));
     const idBadge=deck.commander&&Array.isArray(c.colorIdentity)?' '+_identityBadge(c.colorIdentity):'';
     const inDeck=inDeckCount.get(c.id)||0;
-    const inDeckBadge=inDeck>0?'<span class="qty-pill qty-multi" title="Dans le deck" style="background:linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2));color:#7eff9b;border-color:rgba(75,201,132,.5)">+'+inDeck+'</span>':'';
-    /* +/- buttons : '+' ajoute, '-' retire (si déjà dedans) */
-    const minusBtn=inDeck>0?'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsRm+'" data-keep-modal="1" title="Retirer 1">−</button>':'';
-    return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
+    const owned=c.quantity||1;
+    const maxed=inDeck>=owned;
+    const inDeckBadge=inDeck>0?'<span class="qty-pill qty-multi" title="Dans le deck" style="background:'+(maxed?'linear-gradient(135deg,rgba(255,200,75,.35),rgba(255,160,75,.25))':'linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2))')+';color:'+(maxed?'#ffc875':'#7eff9b')+';border-color:'+(maxed?'rgba(255,200,75,.6)':'rgba(75,201,132,.5)')+'">'+inDeck+'/'+owned+'</span>':'';
+    /* − bouton si déjà au moins 1 */
+    const minusBtn=inDeck>0?'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsRm+'" title="Retirer 1">−</button>':'';
+    /* Click désactivé si maxed (le data-act reste pour afficher le toast d'erreur) */
+    const rowCls='card-row'+(maxed?' picker-maxed':'');
+    return '<div class="'+rowCls+'" data-act="_pickDeckCardAction" data-args="'+args+'" title="'+(maxed?'Limite atteinte ('+owned+' possédée(s))':'Click pour ajouter +1')+'">'
       +imgTag(c.image)
-      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+(' • '+(c.quantity||1)+' dispo')+'</div></div>'
+      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+(maxed?' <span style="background:rgba(255,200,75,.3);color:#ffc875;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px">MAX</span>':'')+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+(' • '+owned+' possédée(s)')+'</div></div>'
       +inDeckBadge
       +minusBtn
       +'</div>';
@@ -3204,6 +3214,14 @@ function _pickDeckCardAction(deckId,cardId,bd){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck){toast('Deck introuvable','err');return}
   const card=(u.cards||[]).find(c=>c.id===cardId);if(!card){toast('Carte introuvable','err');return}
+  /* Limite : pas plus que ce que l'utilisateur possède (main + side cumulé) */
+  const owned=card.quantity||1;
+  const inDeck=[...(deck.mainboard||[]),...(deck.sideboard||[])]
+    .filter(e=>e.cardId===cardId).reduce((s,e)=>s+(e.qty||1),0);
+  if(inDeck>=owned){
+    toast('Limite atteinte : '+owned+' exemplaire(s) dans ta collection','err');
+    return;
+  }
   deck[bd]=deck[bd]||[];
   const exist=deck[bd].find(e=>e.cardId===cardId);
   if(exist){exist.qty=(exist.qty||1)+1}
@@ -3224,6 +3242,17 @@ function adjustDeckCard(deckId,cardId,bd,delta){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   const arr=deck[bd]||[];const e=arr.find(x=>x.cardId===cardId);if(!e)return;
+  /* Si on incrémente : check qu'on dépasse pas la quantité possédée */
+  if(delta>0){
+    const card=(u.cards||[]).find(c=>c.id===cardId);
+    const owned=card?(card.quantity||1):Infinity;
+    const total=[...(deck.mainboard||[]),...(deck.sideboard||[])]
+      .filter(x=>x.cardId===cardId).reduce((s,x)=>s+(x.qty||1),0);
+    if(total+delta>owned){
+      toast('Limite atteinte : '+owned+' exemplaire(s) dans ta collection','err');
+      return;
+    }
+  }
   e.qty=(e.qty||1)+delta;
   if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
   deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
