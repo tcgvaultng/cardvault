@@ -1659,10 +1659,13 @@ function openManualAdd(){
           let frontBlob=null,backBlob=null;
           if(file){status.textContent='Compression recto…';frontBlob=await compressImageWebp(file)}
           if(fileBack){status.textContent='Compression verso…';backBlob=await compressImageWebp(fileBack)}
-          /* === ETAPE 2 : on enregistre la carte LOCALEMENT TOUT DE SUITE ===
-             Image temporaire = blob URL (visible uniquement sur cet appareil
-             tant que l'upload R2 n'a pas reussi). Comme ca la carte ne disparait
-             jamais meme si R2 est en panne. */
+          /* === ETAPE 2 : on persiste l'image dans IndexedDB pour qu'elle
+             survive au reload de la page (un blob: URL meurt avec la session) */
+          const _idbKey=editing?editing.id:('mc_'+uid());
+          if(frontBlob)await idbSet('manual_img_'+_idbKey,frontBlob);
+          if(backBlob)await idbSet('manual_imgback_'+_idbKey,backBlob);
+          /* === ETAPE 3 : on enregistre la carte LOCALEMENT TOUT DE SUITE ===
+             Image temporaire = blob URL recreee a chaque session depuis IDB. */
           const tempFrontUrl=frontBlob?URL.createObjectURL(frontBlob):(editing?editing.image:'');
           const tempBackUrl=backBlob?URL.createObjectURL(backBlob):(editing?editing.imageBack||'':'');
           const idField={pokemon:'_pokeId',mtg:'_mtgId',onepiece:'_opId',yugioh:'_ygoId'}[game]||'_pokeId';
@@ -1672,8 +1675,8 @@ function openManualAdd(){
             editing.game=game;editing.lang=lang;
             editing.setCode=sc;editing.number=num;
             editing.set=setName||sc.toUpperCase();
-            if(frontBlob)editing.image=tempFrontUrl;
-            if(backBlob)editing.imageBack=tempBackUrl;
+            if(frontBlob){editing.image=tempFrontUrl;editing._idbImg=true;editing._pendingUpload=true}
+            if(backBlob){editing.imageBack=tempBackUrl;editing._idbImgBack=true;editing._pendingUpload=true}
             if(!isNaN(price))editing.price=price;
             editing[idField]=cardId;
             editing.updatedAt=Date.now();
@@ -1687,11 +1690,11 @@ function openManualAdd(){
             }
             const cid=u.collections[0].id;
             const now=Date.now();
-            const newCard={id:uid(),collectionId:cid,name:cardName,printedName:cardName,
+            const newCard={id:_idbKey,collectionId:cid,name:cardName,printedName:cardName,
               game,set:setName||sc.toUpperCase(),setCode:sc,number:num,
               image:tempFrontUrl,imageBack:tempBackUrl||undefined,
               price:isNaN(price)?null:price,quantity:1,lang,addedAt:now,updatedAt:now,
-              _manual:true,_pendingUpload:true};
+              _manual:true,_pendingUpload:true,_idbImg:!!frontBlob,_idbImgBack:!!backBlob};
             newCard[idField]=cardId;
             u.cards=u.cards||[];u.cards.push(newCard);
             savedCard=newCard;
@@ -1705,18 +1708,23 @@ function openManualAdd(){
           }
           closeModal();renderCollections();renderAllCards();
           if(!editing)switchView('cards');
-          /* === ETAPE 3 : upload R2 en arriere-plan (best-effort) ========== */
+          /* === ETAPE 4 : upload R2 en arriere-plan (best-effort) ========== */
           (async()=>{
             try{
               if(frontBlob){
                 const key=game+'/'+lang+'/_personal/'+cardId+'.webp';
                 await r2PutObject(key,frontBlob,'image/webp');
                 savedCard.image=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
+                /* Une fois sur R2, on peut purger l'IDB blob (R2 prend le relais) */
+                idbSet('manual_img_'+savedCard.id,null);
+                savedCard._idbImg=false;
               }
               if(backBlob){
                 const key2=game+'/'+lang+'/_personal/'+cardId+'_back.webp';
                 await r2PutObject(key2,backBlob,'image/webp');
                 savedCard.imageBack=baseUrl+'/'+key2.split('/').map(encodeURIComponent).join('/');
+                idbSet('manual_imgback_'+savedCard.id,null);
+                savedCard._idbImgBack=false;
               }
               delete savedCard._pendingUpload;
               savedCard.updatedAt=Date.now();
@@ -7298,8 +7306,40 @@ function _registerServiceWorker(){
     });
   }).catch(e=>console.warn('SW register failed:',e));
 }
+/* Au boot : recree les blob: URLs depuis IndexedDB pour les cartes manuelles
+   dont l'image n'est pas encore sur R2. Sans ca, les blob: URLs sauvees dans
+   localStorage sont mortes apres reload (les sessions blob ne survivent pas). */
+async function _recoverManualBlobImages(){
+  const u=getUser();if(!u||!u.cards)return;
+  let touched=false;
+  for(const c of u.cards){
+    if(!c._manual)continue;
+    if(c._idbImg){
+      const blob=await idbGet('manual_img_'+c.id);
+      if(blob instanceof Blob){
+        c.image=URL.createObjectURL(blob);
+        touched=true;
+      } else if(c.image&&c.image.startsWith('blob:')){
+        /* IDB perdu : on retire l'URL morte pour eviter une image cassee */
+        c.image='';touched=true;
+      }
+    }
+    if(c._idbImgBack){
+      const blob=await idbGet('manual_imgback_'+c.id);
+      if(blob instanceof Blob){
+        c.imageBack=URL.createObjectURL(blob);
+        touched=true;
+      } else if(c.imageBack&&c.imageBack.startsWith('blob:')){
+        c.imageBack='';touched=true;
+      }
+    }
+  }
+  if(touched){renderAllCards();renderCollections()}
+}
+
 /* Recompresse + ré-uploade les cartes manuelles dont l'image n'a pas
-   été poussée vers R2 (page fermée pendant l'upload, R2 down, etc.). */
+   été poussée vers R2 (page fermée pendant l'upload, R2 down, etc.).
+   Source de l'image = IndexedDB (le blob: URL est mort apres reload). */
 async function _retryPendingUploads(){
   const u=getUser();if(!u||!u.cards)return;
   const pending=u.cards.filter(c=>c._pendingUpload&&c._manual);
@@ -7309,14 +7349,22 @@ async function _retryPendingUploads(){
   const baseUrl=cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev';
   for(const c of pending){
     try{
-      if(!c.image||!c.image.startsWith('blob:'))continue;
-      const resp=await fetch(c.image);
-      if(!resp.ok)continue;
-      const blob=await resp.blob();
-      const cardId=c.setCode+'-'+c.number;
+      const blob=c._idbImg?await idbGet('manual_img_'+c.id):null;
+      if(!(blob instanceof Blob))continue;
+      const cardId=(c._mtgId||c._pokeId||c._opId||c._ygoId||(c.setCode+'-'+c.number));
       const key=c.game+'/'+(c.lang||'en')+'/_personal/'+cardId+'.webp';
       await r2PutObject(key,blob,'image/webp');
       c.image=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
+      idbSet('manual_img_'+c.id,null);c._idbImg=false;
+      if(c._idbImgBack){
+        const blobBack=await idbGet('manual_imgback_'+c.id);
+        if(blobBack instanceof Blob){
+          const key2=c.game+'/'+(c.lang||'en')+'/_personal/'+cardId+'_back.webp';
+          await r2PutObject(key2,blobBack,'image/webp');
+          c.imageBack=baseUrl+'/'+key2.split('/').map(encodeURIComponent).join('/');
+          idbSet('manual_imgback_'+c.id,null);c._idbImgBack=false;
+        }
+      }
       delete c._pendingUpload;
       c.updatedAt=Date.now();
       touchActiveUser();saveLocal();scheduleSync();
@@ -7334,6 +7382,7 @@ function bootApp(){
   _wireCardDragToCollections();
   _initImgCache();
   _registerServiceWorker();
+  _recoverManualBlobImages();
   setTimeout(_retryPendingUploads,3000);
   renderCollections();
   if(STATE.config.gistId){
