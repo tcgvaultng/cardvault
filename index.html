@@ -2443,9 +2443,9 @@ const FORMAT_RULES={
     'Modern'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
     'Legacy'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
     'Vintage'       :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true,note:'Cartes restricted limitées à 1'},
-    'Commander/EDH' :{mainMin:100,mainMax:100,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true,note:'100 cartes exactes (singleton)'},
+    'Commander/EDH' :{mainMin:99,mainMax:99,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true,commanderCounts:true,note:'Mainboard 99 cartes + 1 commandant = 100 total (singleton)'},
     'Pauper'        :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true,note:'Common only'},
-    'Brawl'         :{mainMin:60,mainMax:60,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true},
+    'Brawl'         :{mainMin:59,mainMax:59,sideMax:0,maxCopies:1,basicsExempt:true,singleton:true,commanderCounts:true,note:'Mainboard 59 + 1 commandant = 60 total (singleton)'},
     'Historic'      :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
     'Alchemy'       :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
     'Pre-modern'    :{mainMin:60,sideMax:15,maxCopies:4,basicsExempt:true},
@@ -2500,13 +2500,17 @@ function _canAddToDeck(deck,card,bd,delta){
       return {ok:false,reason:r};
     }
   }
-  /* 4. Limite copies par carte (par NOM, cumul main+side) */
+  /* 4. Limite copies par carte (par NOM, cumul main+side+commandant) */
   const limit=rules.singleton?1:rules.maxCopies;
   const exempt=(rules.basicsExempt&&_isBasicLand(card.name))||(rules.energyExempt&&_isPokemonBasicEnergy(card.name));
   if(limit&&!exempt){
-    const sameNameTotal=[...main,...side]
+    let sameNameTotal=[...main,...side]
       .filter(e=>(e.snapshot&&e.snapshot.name)===card.name)
       .reduce((s,e)=>s+(e.qty||1),0);
+    /* Le commandant compte dans le total pour les formats avec commanderCounts */
+    if(rules.commanderCounts&&deck.commander&&deck.commander.snapshot?.name===card.name){
+      sameNameTotal+=1;
+    }
     if(sameNameTotal+delta>limit){
       return {ok:false,reason:rules.singleton?'Format singleton : 1 max par carte ('+esc(deck.format)+')':'Limite format : '+limit+' max par carte ('+esc(deck.format)+')'};
     }
@@ -2672,8 +2676,11 @@ function validateDeck(deck){
       }
     }
   }
-  if(rules.mainMin&&mainQty<rules.mainMin){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — minimum '+rules.mainMin});ok=false}
-  if(rules.mainMax&&mainQty>rules.mainMax){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — maximum '+rules.mainMax});ok=false}
+  /* Pour les formats où le commandant compte dans le total : message clarifié */
+  const cmdrCounted=rules.commanderCounts&&deck.commander?1:0;
+  const totalLabel=cmdrCounted?' (+ 1 commandant = '+(mainQty+1)+' total)':'';
+  if(rules.mainMin&&mainQty<rules.mainMin){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s)'+totalLabel+' — minimum '+rules.mainMin+(cmdrCounted?' + commandant':'')});ok=false}
+  if(rules.mainMax&&mainQty>rules.mainMax){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s)'+totalLabel+' — maximum '+rules.mainMax+(cmdrCounted?' + commandant':'')});ok=false}
   if(rules.sideMax!=null&&sideQty>rules.sideMax){msgs.push({type:'err',text:'Sideboard : '+sideQty+' carte(s) — maximum '+rules.sideMax});ok=false}
   /* Vérification copies par carte */
   const exempt=name=>{
@@ -3080,12 +3087,18 @@ function openDeck(deckId){
         +'</div></div>';
     }
   }
+  /* Total incluant commandant si format commanderCounts */
+  const cmdrInTotal=validation.rules?.commanderCounts&&deck.commander?1:0;
+  const totalCount=mainQty+cmdrInTotal;
+  const totalLine=cmdrInTotal
+    ?mainQty+' main + 1 commandant = <b>'+totalCount+'</b>'+(validation.rules.mainMin?' / '+(validation.rules.mainMin+1):'')+(sideQty?' · '+sideQty+' side':'')
+    :mainQty+' main'+(sideQty?' · '+sideQty+' side':'');
   openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
-    '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
+    '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+totalLine+'</div>'
     +commanderHtml
     +validationHtml
     +'<button class="btn btn-violet btn-block mb-10" data-act="addCardToDeck" data-args="'+addArgs+'">+ Ajouter une carte depuis ma collection</button>'
-    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+(validation.rules&&validation.rules.mainMin?' / '+validation.rules.mainMin:'')+')</h3>'
+    +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+(validation.rules&&validation.rules.mainMin?' / '+validation.rules.mainMin:'')+(cmdrInTotal?' + 1 cmdr':'')+')</h3>'
     +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
     +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+(validation.rules&&validation.rules.sideMax!=null?' / '+validation.rules.sideMax:'')+')</h3>'
     +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
