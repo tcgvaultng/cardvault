@@ -2473,6 +2473,69 @@ function _isPokemonBasicEnergy(name){return /^([\w]+\s+)?(energy|énergie)\s+(de
 
 function getFormatRules(game,format){return FORMAT_RULES[game]?.[format]||null}
 
+/* Vérifie si on peut ajouter `delta` exemplaires de `card` dans `bd` (mainboard|sideboard).
+   Retourne {ok:bool, reason:string, effectiveLimit:number}. */
+function _canAddToDeck(deck,card,bd,delta){
+  const rules=getFormatRules(deck.game,deck.format);
+  const owned=card.quantity||1;
+  const main=deck.mainboard||[],side=deck.sideboard||[];
+  const inDeckTotal=[...main,...side].filter(e=>e.cardId===card.id).reduce((s,e)=>s+(e.qty||1),0);
+  /* 1. Limite collection (jamais dépasser) */
+  if(inDeckTotal+delta>owned){
+    return {ok:false,reason:'Limite collection : '+owned+' exemplaire(s) possédé(s)'};
+  }
+  if(!rules)return {ok:true};
+  /* 2. Taille mainboard */
+  if(bd==='mainboard'&&rules.mainMax){
+    const mainQty=main.reduce((s,e)=>s+(e.qty||1),0);
+    if(mainQty+delta>rules.mainMax){
+      return {ok:false,reason:'Mainboard plein : '+rules.mainMax+' carte(s) max ('+esc(deck.format)+')'};
+    }
+  }
+  /* 3. Taille sideboard */
+  if(bd==='sideboard'&&rules.sideMax!=null){
+    const sideQty=side.reduce((s,e)=>s+(e.qty||1),0);
+    if(sideQty+delta>rules.sideMax){
+      const r=rules.sideMax===0?'Sideboard interdit ('+esc(deck.format)+')':'Sideboard plein : '+rules.sideMax+' carte(s) max';
+      return {ok:false,reason:r};
+    }
+  }
+  /* 4. Limite copies par carte (par NOM, cumul main+side) */
+  const limit=rules.singleton?1:rules.maxCopies;
+  const exempt=(rules.basicsExempt&&_isBasicLand(card.name))||(rules.energyExempt&&_isPokemonBasicEnergy(card.name));
+  if(limit&&!exempt){
+    const sameNameTotal=[...main,...side]
+      .filter(e=>(e.snapshot&&e.snapshot.name)===card.name)
+      .reduce((s,e)=>s+(e.qty||1),0);
+    if(sameNameTotal+delta>limit){
+      return {ok:false,reason:rules.singleton?'Format singleton : 1 max par carte ('+esc(deck.format)+')':'Limite format : '+limit+' max par carte ('+esc(deck.format)+')'};
+    }
+  }
+  /* 5. Identité couleur Commander */
+  if(_isCommanderFormat(deck)&&deck.commander){
+    const cmdrId=deck.commander.snapshot?.colorIdentity||[];
+    const ci=card.colorIdentity;
+    if(Array.isArray(ci)&&!_identitySubset(ci,cmdrId)){
+      return {ok:false,reason:'Hors identité couleur du commandant'};
+    }
+  }
+  return {ok:true};
+}
+
+/* Calcule la limite max effective d'une carte dans un deck (le plus restrictif) */
+function _effectiveCardLimit(deck,card){
+  const rules=getFormatRules(deck.game,deck.format);
+  const owned=card.quantity||1;
+  if(!rules)return owned;
+  let limit=owned;
+  const exempt=(rules.basicsExempt&&_isBasicLand(card.name))||(rules.energyExempt&&_isPokemonBasicEnergy(card.name));
+  if(!exempt){
+    const formatLimit=rules.singleton?1:rules.maxCopies;
+    if(formatLimit)limit=Math.min(limit,formatLimit);
+  }
+  return limit;
+}
+
 /* === Commander : sélection du commandant + filtre par identité couleur === */
 function _isCommanderFormat(deck){return deck&&deck.game==='mtg'&&/Commander|EDH|Brawl/i.test(deck.format||'')}
 function _isLegendary(c){return /Legendary/i.test((c.typeLine||c.snapshot?.typeLine||'')||'')}
@@ -3083,15 +3146,24 @@ function _renderDeckPicker(deck,allCards,openFresh){
     const idBadge=deck.commander&&Array.isArray(c.colorIdentity)?' '+_identityBadge(c.colorIdentity):'';
     const inDeck=inDeckCount.get(c.id)||0;
     const owned=c.quantity||1;
-    const maxed=inDeck>=owned;
-    const inDeckBadge=inDeck>0?'<span class="qty-pill qty-multi" title="Dans le deck" style="background:'+(maxed?'linear-gradient(135deg,rgba(255,200,75,.35),rgba(255,160,75,.25))':'linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2))')+';color:'+(maxed?'#ffc875':'#7eff9b')+';border-color:'+(maxed?'rgba(255,200,75,.6)':'rgba(75,201,132,.5)')+'">'+inDeck+'/'+owned+'</span>':'';
-    /* − bouton si déjà au moins 1 */
+    /* Limite effective = min(owned, format) */
+    const effectiveLimit=_effectiveCardLimit(deck,c);
+    /* Compte par nom pour respecter le format (singleton, max copies) */
+    const sameNameInDeck=[...(deck.mainboard||[]),...(deck.sideboard||[])]
+      .filter(e=>(e.snapshot&&e.snapshot.name)===c.name)
+      .reduce((s,e)=>s+(e.qty||1),0);
+    const maxed=inDeck>=owned||sameNameInDeck>=effectiveLimit;
+    const reason=inDeck>=owned?'collection':'format';
+    const limitDisplay=Math.min(owned,effectiveLimit);
+    const inDeckBadge=inDeck>0?'<span class="qty-pill qty-multi" title="Dans le deck" style="background:'+(maxed?'linear-gradient(135deg,rgba(255,200,75,.35),rgba(255,160,75,.25))':'linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2))')+';color:'+(maxed?'#ffc875':'#7eff9b')+';border-color:'+(maxed?'rgba(255,200,75,.6)':'rgba(75,201,132,.5)')+'">'+inDeck+'/'+limitDisplay+'</span>':'';
     const minusBtn=inDeck>0?'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsRm+'" title="Retirer 1">−</button>':'';
-    /* Click désactivé si maxed (le data-act reste pour afficher le toast d'erreur) */
     const rowCls='card-row'+(maxed?' picker-maxed':'');
-    return '<div class="'+rowCls+'" data-act="_pickDeckCardAction" data-args="'+args+'" title="'+(maxed?'Limite atteinte ('+owned+' possédée(s))':'Click pour ajouter +1')+'">'
+    const maxLabel=maxed?(' <span style="background:rgba(255,200,75,.3);color:#ffc875;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px">'+(reason==='collection'?'MAX':'LIMITE')+'</span>'):'';
+    /* Sub : montre owned ET la limite format si différente */
+    const subInfo=owned+' possédée(s)'+(effectiveLimit<owned?' • format max '+effectiveLimit:'');
+    return '<div class="'+rowCls+'" data-act="_pickDeckCardAction" data-args="'+args+'">'
       +imgTag(c.image)
-      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+(maxed?' <span style="background:rgba(255,200,75,.3);color:#ffc875;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px">MAX</span>':'')+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+(' • '+owned+' possédée(s)')+'</div></div>'
+      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+maxLabel+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+' • '+subInfo+'</div></div>'
       +inDeckBadge
       +minusBtn
       +'</div>';
@@ -3214,14 +3286,8 @@ function _pickDeckCardAction(deckId,cardId,bd){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck){toast('Deck introuvable','err');return}
   const card=(u.cards||[]).find(c=>c.id===cardId);if(!card){toast('Carte introuvable','err');return}
-  /* Limite : pas plus que ce que l'utilisateur possède (main + side cumulé) */
-  const owned=card.quantity||1;
-  const inDeck=[...(deck.mainboard||[]),...(deck.sideboard||[])]
-    .filter(e=>e.cardId===cardId).reduce((s,e)=>s+(e.qty||1),0);
-  if(inDeck>=owned){
-    toast('Limite atteinte : '+owned+' exemplaire(s) dans ta collection','err');
-    return;
-  }
+  const check=_canAddToDeck(deck,card,bd,1);
+  if(!check.ok){toast('⚠️ '+check.reason,'err');return}
   deck[bd]=deck[bd]||[];
   const exist=deck[bd].find(e=>e.cardId===cardId);
   if(exist){exist.qty=(exist.qty||1)+1}
@@ -3242,15 +3308,11 @@ function adjustDeckCard(deckId,cardId,bd,delta){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
   const arr=deck[bd]||[];const e=arr.find(x=>x.cardId===cardId);if(!e)return;
-  /* Si on incrémente : check qu'on dépasse pas la quantité possédée */
   if(delta>0){
     const card=(u.cards||[]).find(c=>c.id===cardId);
-    const owned=card?(card.quantity||1):Infinity;
-    const total=[...(deck.mainboard||[]),...(deck.sideboard||[])]
-      .filter(x=>x.cardId===cardId).reduce((s,x)=>s+(x.qty||1),0);
-    if(total+delta>owned){
-      toast('Limite atteinte : '+owned+' exemplaire(s) dans ta collection','err');
-      return;
+    if(card){
+      const check=_canAddToDeck(deck,card,bd,delta);
+      if(!check.ok){toast('⚠️ '+check.reason,'err');return}
     }
   }
   e.qty=(e.qty||1)+delta;
