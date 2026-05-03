@@ -313,6 +313,26 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Filtres avancés === */
+.advanced-filters{margin-bottom:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px}
+.advanced-filters summary{cursor:pointer;font-size:13px;color:var(--text-dim);font-weight:600;padding:4px 0}
+.advanced-filters[open] summary{margin-bottom:8px}
+.advanced-filters summary:hover{color:var(--gold-2)}
+.adv-filters-content{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.adv-filters-content .field{margin-bottom:0;flex:1 1 180px;min-width:140px}
+.adv-filters-content label{font-size:10px}
+.color-pick{display:flex;gap:4px;flex-wrap:wrap}
+.color-pick button{width:32px;height:32px;border-radius:50%;border:2px solid var(--border);font-size:14px;cursor:pointer;background:var(--panel);transition:all .15s;font-family:inherit}
+.color-pick button[data-active="1"]{border-color:var(--gold);background:var(--gold);color:#231300;transform:scale(1.05)}
+.color-W[data-active="1"]{background:#fffbd5!important;color:#000!important;border-color:#fff!important}
+.color-U[data-active="1"]{background:#0e68ab!important;color:#fff!important;border-color:#3b98c4!important}
+.color-B[data-active="1"]{background:#150b00!important;color:#fff!important;border-color:#444!important}
+.color-R[data-active="1"]{background:#d3202a!important;color:#fff!important;border-color:#ff4d4d!important}
+.color-G[data-active="1"]{background:#00733e!important;color:#fff!important;border-color:#3aaa6f!important}
+.color-C[data-active="1"]{background:#888!important;color:#fff!important;border-color:#bbb!important}
+.adv-clear{background:none;border:1px solid var(--border);color:var(--text-dim);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+.adv-clear:hover{color:var(--gold);border-color:var(--gold)}
+
 /* === Achievements === */
 .achiev-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 .achiev{padding:12px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;background:var(--panel);position:relative;transition:transform .15s,border-color .15s}
@@ -755,6 +775,10 @@ body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px soli
         <button id="bulkToggleBtn" class="btn btn-ghost btn-sm" title="Sélection multiple">☑ Sélection</button>
       </div>
       <div class="segmented" id="filterGameSeg"></div>
+      <details class="advanced-filters">
+        <summary>🎛️ Filtres avancés</summary>
+        <div id="advFiltersBox" class="adv-filters-content"></div>
+      </details>
       <div id="allCardsList"></div>
       <div id="bulkActions" class="bulk-actions hidden">
         <span id="bulkCount">0 sélectionnée(s)</span>
@@ -2983,6 +3007,95 @@ function toggleWishlist(id){
 }
 function setCardsMode(m){_cardsMode=m;renderAllCards()}
 
+/* État filtres avancés */
+let _advFilters={
+  mtgColors:new Set(),mtgType:'',mtgRarity:'',mtgCmcMin:0,mtgCmcMax:99,
+  pkmType:'',pkmRarity:'',pkmHpMin:0,pkmHpMax:999,
+  priceMin:0,priceMax:1e9,
+  conditionFilter:'',foilOnly:false,
+};
+function _clearAdvFilters(){
+  _advFilters={mtgColors:new Set(),mtgType:'',mtgRarity:'',mtgCmcMin:0,mtgCmcMax:99,pkmType:'',pkmRarity:'',pkmHpMin:0,pkmHpMax:999,priceMin:0,priceMax:1e9,conditionFilter:'',foilOnly:false};
+  _renderAdvFilters();renderAllCards();
+}
+function _toggleColor(col){
+  if(_advFilters.mtgColors.has(col))_advFilters.mtgColors.delete(col);
+  else _advFilters.mtgColors.add(col);
+  _renderAdvFilters();renderAllCards();
+}
+function _renderAdvFilters(){
+  const box=document.getElementById('advFiltersBox');if(!box)return;
+  const game=_gameFilter;
+  let html='';
+  /* Filtres communs : prix, foil, condition */
+  html+='<div class="field"><label>Prix min (€)</label><input type="number" min="0" step="0.5" id="advPriceMin" value="'+(_advFilters.priceMin||'')+'" placeholder="0"></div>';
+  html+='<div class="field"><label>Prix max (€)</label><input type="number" min="0" step="0.5" id="advPriceMax" value="'+(_advFilters.priceMax!==1e9?_advFilters.priceMax:'')+'" placeholder="∞"></div>';
+  html+='<div class="field"><label>Condition</label><select id="advCondition"><option value="">Toutes</option>'
+    +['NM','LP','MP','HP','DMG'].map(k=>'<option value="'+k+'"'+(_advFilters.conditionFilter===k?' selected':'')+'>'+k+'</option>').join('')+'</select></div>';
+  html+='<div class="field"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="advFoil" '+(_advFilters.foilOnly?'checked':'')+'>✨ Foil uniquement</label></div>';
+  /* MTG-specific */
+  if(game==='mtg'||game==='all'){
+    html+='<div class="field"><label>🃏 MTG : Couleurs</label><div class="color-pick">';
+    [['W','⚪'],['U','🔵'],['B','⚫'],['R','🔴'],['G','🟢'],['C','◯']].forEach(([c,e])=>{
+      html+='<button class="color-'+c+'" data-active="'+(_advFilters.mtgColors.has(c)?'1':'0')+'" onclick="_toggleColor(\''+c+'\')">'+e+'</button>';
+    });
+    html+='</div></div>';
+    html+='<div class="field"><label>🃏 MTG : Type</label><input type="text" id="advMtgType" value="'+esc(_advFilters.mtgType)+'" placeholder="ex: Creature, Instant…"></div>';
+    html+='<div class="field"><label>🃏 MTG : Rareté</label><select id="advMtgRarity"><option value="">Toutes</option>'
+      +['common','uncommon','rare','mythic'].map(r=>'<option value="'+r+'"'+(_advFilters.mtgRarity===r?' selected':'')+'>'+r+'</option>').join('')+'</select></div>';
+    html+='<div class="field"><label>🃏 MTG : CMC ('+_advFilters.mtgCmcMin+'-'+(_advFilters.mtgCmcMax===99?'∞':_advFilters.mtgCmcMax)+')</label><div class="row"><input type="number" min="0" max="20" id="advMtgCmcMin" value="'+_advFilters.mtgCmcMin+'" style="width:60px"><input type="number" min="0" max="20" id="advMtgCmcMax" value="'+(_advFilters.mtgCmcMax===99?'':_advFilters.mtgCmcMax)+'" placeholder="∞" style="width:60px"></div></div>';
+  }
+  /* Pokémon-specific */
+  if(game==='pokemon'||game==='all'){
+    html+='<div class="field"><label>🐉 Pokémon : Type</label><input type="text" id="advPkmType" value="'+esc(_advFilters.pkmType)+'" placeholder="ex: Fire, Water…"></div>';
+    html+='<div class="field"><label>🐉 Pokémon : HP</label><div class="row"><input type="number" min="0" id="advPkmHpMin" value="'+_advFilters.pkmHpMin+'" placeholder="min" style="width:60px"><input type="number" min="0" id="advPkmHpMax" value="'+(_advFilters.pkmHpMax===999?'':_advFilters.pkmHpMax)+'" placeholder="max" style="width:60px"></div></div>';
+    html+='<div class="field"><label>🐉 Pokémon : Rareté</label><input type="text" id="advPkmRarity" value="'+esc(_advFilters.pkmRarity)+'" placeholder="Common, Rare, Holo Rare…"></div>';
+  }
+  html+='<div class="field" style="flex:0 0 auto"><label>&nbsp;</label><button class="adv-clear" onclick="_clearAdvFilters()">↺ Effacer filtres</button></div>';
+  box.innerHTML=html;
+}
+
+function _passesAdvFilters(c){
+  /* Prix */
+  if(_advFilters.priceMin>0&&(c.price||0)<_advFilters.priceMin)return false;
+  if(_advFilters.priceMax<1e9&&(c.price||0)>_advFilters.priceMax)return false;
+  /* Foil */
+  if(_advFilters.foilOnly&&!c.foil)return false;
+  /* Condition */
+  if(_advFilters.conditionFilter&&(c.condition||'NM')!==_advFilters.conditionFilter)return false;
+  /* MTG */
+  if(c.game==='mtg'){
+    if(_advFilters.mtgColors.size>0&&Array.isArray(c.colors)){
+      const hasAny=[..._advFilters.mtgColors].some(col=>c.colors.includes(col));
+      if(!hasAny)return false;
+    }
+    if(_advFilters.mtgType&&c.typeLine&&!c.typeLine.toLowerCase().includes(_advFilters.mtgType.toLowerCase()))return false;
+    if(_advFilters.mtgRarity&&c.rarity&&c.rarity!==_advFilters.mtgRarity)return false;
+    if(c.cmc!=null){
+      if(c.cmc<_advFilters.mtgCmcMin)return false;
+      if(c.cmc>_advFilters.mtgCmcMax)return false;
+    }
+  }
+  /* Pokémon */
+  if(c.game==='pokemon'){
+    if(_advFilters.pkmType&&Array.isArray(c.types)){
+      const matches=c.types.some(t=>t.toLowerCase().includes(_advFilters.pkmType.toLowerCase()));
+      if(!matches)return false;
+    }
+    if(_advFilters.pkmRarity&&c.rarity&&!c.rarity.toLowerCase().includes(_advFilters.pkmRarity.toLowerCase()))return false;
+    if(c.hp!=null){
+      const hp=parseInt(c.hp);
+      if(!isNaN(hp)){
+        if(hp<_advFilters.pkmHpMin)return false;
+        if(hp>_advFilters.pkmHpMax)return false;
+      }
+    }
+  }
+  return true;
+}
+window._toggleColor=_toggleColor;
+window._clearAdvFilters=_clearAdvFilters;
+
 function _sortCards(cards,sort){
   const cmp={
     name:(a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}),
@@ -3041,7 +3154,9 @@ function renderAllCards(){
   else cards=cards.filter(c=>!c.wishlist);
   if(_gameFilter!=='all')cards=cards.filter(c=>c.game===_gameFilter);
   if(f)cards=cards.filter(c=>c.name.toLowerCase().includes(f)||(c.set||'').toLowerCase().includes(f)||(c.setCode||'').toLowerCase().includes(f));
+  cards=cards.filter(_passesAdvFilters);
   _sortCards(cards,_cardsSort);
+  _renderAdvFilters();
   /* Sync UI mode toggle */
   const ob=document.getElementById('modeOwnedBtn'),wb=document.getElementById('modeWishlistBtn');
   if(ob&&wb){ob.classList.toggle('active',_cardsMode==='owned');wb.classList.toggle('active',_cardsMode==='wishlist')}
@@ -3071,7 +3186,13 @@ function _updateBulkBar(){
   if(!bar)return;
   if(_cardsBulkMode&&_cardsSelection.size>0){
     bar.classList.remove('hidden');
-    document.getElementById('bulkCount').textContent=_cardsSelection.size+' sélectionnée(s)';
+    /* Calculateur valeur : total qty + total € de la sélection */
+    const u=getUser();
+    const cards=(u?.cards||[]).filter(c=>_cardsSelection.has(c.id));
+    const totalQty=cards.reduce((s,c)=>s+(c.quantity||1),0);
+    const totalVal=cards.reduce((s,c)=>s+(c.price||0)*(c.quantity||1),0);
+    document.getElementById('bulkCount').innerHTML=
+      '<b>'+_cardsSelection.size+'</b> sélection · <b>'+totalQty+'</b> ex. · <b style="color:var(--gold-2)">'+fmtEur(totalVal)+'</b>';
   } else bar.classList.add('hidden');
 }
 
@@ -3398,7 +3519,12 @@ async function searchScryfall(q,lang,limit,opts){
         price:primary!=null?Math.round(primary*100)/100:null,
         prices,
         lang:c.lang||lang,
-        _mtgId:c.set+'-'+c.collector_number
+        _mtgId:c.set+'-'+c.collector_number,
+        /* Métadonnées MTG pour filtres avancés */
+        colors:c.colors||c.color_identity||[],
+        typeLine:c.type_line||c.printed_type_line||'',
+        cmc:typeof c.cmc==='number'?c.cmc:null,
+        rarity:c.rarity||''
       });
     });
     url=j.has_more?j.next_page:null;
@@ -3502,7 +3628,7 @@ async function searchPokemon(q,lang,limit,opts){
         tcg_usd_high:tpFirst?.high||null,
       };
       const price=prices.cm_eur||prices.cm_eur_trend||(prices.tcg_usd?prices.tcg_usd*0.92:null);
-      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,prices,lang:'en',_pokeId:c.id};
+      return {id:uid(),game:'pokemon',name:c.name,printedName:c.name,set:c.set?.name||'',setCode:c.set?.id||'',number:c.number||'',image:c.images?.large||c.images?.small||'',price:price!=null?Math.round(price*100)/100:null,prices,lang:'en',_pokeId:c.id,types:c.types||[],hp:c.hp||null,rarity:c.rarity||''};
     });
     return mergeWithLibrary(out,'pokemon',q,lang,opts,limit);
   }
@@ -5402,6 +5528,29 @@ document.getElementById('viewGalleryBtn').addEventListener('click',()=>setCardsV
 document.getElementById('bulkToggleBtn').addEventListener('click',toggleBulkMode);
 document.getElementById('modeOwnedBtn').addEventListener('click',()=>setCardsMode('owned'));
 document.getElementById('modeWishlistBtn').addEventListener('click',()=>setCardsMode('wishlist'));
+/* Filtres avancés : update _advFilters et re-render */
+let _advFiltersDebounce=null;
+document.addEventListener('input',e=>{
+  if(!e.target.id||!e.target.id.startsWith('adv'))return;
+  clearTimeout(_advFiltersDebounce);
+  _advFiltersDebounce=setTimeout(()=>{
+    const id=e.target.id;
+    const v=e.target.value;
+    if(id==='advPriceMin')_advFilters.priceMin=parseFloat(v)||0;
+    else if(id==='advPriceMax')_advFilters.priceMax=v?parseFloat(v):1e9;
+    else if(id==='advFoil')_advFilters.foilOnly=e.target.checked;
+    else if(id==='advCondition')_advFilters.conditionFilter=v;
+    else if(id==='advMtgType')_advFilters.mtgType=v;
+    else if(id==='advMtgRarity')_advFilters.mtgRarity=v;
+    else if(id==='advMtgCmcMin')_advFilters.mtgCmcMin=parseInt(v)||0;
+    else if(id==='advMtgCmcMax')_advFilters.mtgCmcMax=v?parseInt(v):99;
+    else if(id==='advPkmType')_advFilters.pkmType=v;
+    else if(id==='advPkmRarity')_advFilters.pkmRarity=v;
+    else if(id==='advPkmHpMin')_advFilters.pkmHpMin=parseInt(v)||0;
+    else if(id==='advPkmHpMax')_advFilters.pkmHpMax=v?parseInt(v):999;
+    renderAllCards();
+  },250);
+});
 /* Backup file input */
 document.addEventListener('change',e=>{
   if(e.target.id==='backupFile'&&e.target.files&&e.target.files[0]){
