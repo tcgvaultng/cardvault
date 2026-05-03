@@ -2204,6 +2204,86 @@ async function syncPull(){
 }
 
 /* ==================== COLLECTIONS ==================== */
+/* === Cache d'images en IndexedDB (offline + perf) === */
+const IMG_CACHE_STORE='img_cache';
+let _imgCacheDB=null;
+function _imgCacheOpen(){
+  if(_imgCacheDB)return Promise.resolve(_imgCacheDB);
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('cardvault_img_cache',1);
+    r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(IMG_CACHE_STORE))d.createObjectStore(IMG_CACHE_STORE)};
+    r.onsuccess=()=>{_imgCacheDB=r.result;res(_imgCacheDB)};
+    r.onerror=()=>rej(r.error);
+  });
+}
+async function _imgCacheGet(url){
+  try{
+    const db=await _imgCacheOpen();
+    return await new Promise((res,rej)=>{
+      const tx=db.transaction(IMG_CACHE_STORE,'readonly');
+      const r=tx.objectStore(IMG_CACHE_STORE).get(url);
+      r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+    });
+  }catch(_){return null}
+}
+async function _imgCacheSet(url,blob){
+  try{
+    const db=await _imgCacheOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(IMG_CACHE_STORE,'readwrite');
+      tx.objectStore(IMG_CACHE_STORE).put({blob,cachedAt:Date.now()},url);
+      tx.oncomplete=res;tx.onerror=()=>rej(tx.error);
+    });
+  }catch(_){}
+}
+/* Intercepte les images R2 pour les cacher.
+   Approche : observe les <img> chargés, après chargement met le blob en cache.
+   Au boot suivant, si offline (navigator.onLine=false), remplace src par blob URL du cache. */
+async function _hydrateImageFromCache(img){
+  const src=img.getAttribute('src');
+  if(!src||src.startsWith('blob:')||src.startsWith('data:'))return;
+  if(!/r2\.dev|cardmarket|scryfall/i.test(src))return;
+  /* Si online et image charge déjà, on la met en cache après load */
+  img.addEventListener('load',async()=>{
+    if(!navigator.onLine)return;
+    try{
+      const cached=await _imgCacheGet(src);
+      if(cached)return; /* déjà en cache */
+      const r=await fetch(src,{mode:'cors'});
+      if(r.ok){const b=await r.blob();await _imgCacheSet(src,b)}
+    }catch(_){}
+  },{once:true});
+  /* Si offline et image fail, sert depuis cache */
+  img.addEventListener('error',async()=>{
+    if(navigator.onLine)return;
+    try{
+      const cached=await _imgCacheGet(src);
+      if(cached&&cached.blob){
+        const url=URL.createObjectURL(cached.blob);
+        img.src=url;
+        img.classList.remove('err-hide');
+      }
+    }catch(_){}
+  },{once:true});
+}
+/* MutationObserver : applique sur tout nouvel <img> qui apparaît */
+let _imgObserver=null;
+function _initImgCache(){
+  if(_imgObserver||!('IntersectionObserver' in window))return;
+  /* Hydrate les images existantes */
+  document.querySelectorAll('img[src]').forEach(_hydrateImageFromCache);
+  /* Observe les nouveaux imgs */
+  _imgObserver=new MutationObserver(muts=>{
+    for(const m of muts){
+      m.addedNodes.forEach(n=>{
+        if(n.tagName==='IMG'&&n.src)_hydrateImageFromCache(n);
+        else if(n.querySelectorAll)n.querySelectorAll('img[src]').forEach(_hydrateImageFromCache);
+      });
+    }
+  });
+  _imgObserver.observe(document.body,{childList:true,subtree:true});
+}
+
 /* === Achievements / Badges === */
 const ACHIEVEMENTS=[
   {id:'first',icon:'🌱',name:'Premier pas',desc:'1 carte ajoutée',check:s=>s.totalCards>=1,goal:1,key:'totalCards'},
@@ -2257,6 +2337,56 @@ function _renderAchievements(){
       +'</div>';
   }).join('');
 }
+
+/* === Swipe gestures sur les cartes (mobile uniquement) === */
+let _swipe={startX:0,startY:0,curX:0,el:null,active:false};
+document.addEventListener('touchstart',e=>{
+  /* Désactivé sur desktop (hover:hover) */
+  if(matchMedia('(hover:hover)').matches)return;
+  const card=e.target.closest('.card-row[data-card-id]');
+  if(!card)return;
+  /* Skip si touche sur un bouton interne */
+  if(e.target.closest('button,a'))return;
+  _swipe.startX=e.touches[0].clientX;
+  _swipe.startY=e.touches[0].clientY;
+  _swipe.curX=_swipe.startX;
+  _swipe.el=card;
+  _swipe.active=true;
+  card.style.transition='none';
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(!_swipe.active||!_swipe.el)return;
+  _swipe.curX=e.touches[0].clientX;
+  const dx=_swipe.curX-_swipe.startX;
+  const dy=Math.abs(e.touches[0].clientY-_swipe.startY);
+  /* Si vertical scroll → annule */
+  if(dy>15&&Math.abs(dx)<15){_swipe.active=false;_swipe.el.style.transform='';_swipe.el.style.transition='';_swipe.el=null;return}
+  if(Math.abs(dx)>10){
+    _swipe.el.style.transform='translateX('+(dx*0.7)+'px)';
+    /* Couleur background selon direction */
+    if(dx>50)_swipe.el.style.backgroundColor='rgba(75,201,132,.15)'; /* vert : déplacer */
+    else if(dx<-50)_swipe.el.style.backgroundColor='rgba(224,90,90,.15)'; /* rouge : supprimer */
+    else _swipe.el.style.backgroundColor='';
+  }
+},{passive:true});
+document.addEventListener('touchend',()=>{
+  if(!_swipe.active||!_swipe.el)return;
+  const dx=_swipe.curX-_swipe.startX;
+  const el=_swipe.el;
+  el.style.transition='transform .25s ease,background-color .25s ease';
+  el.style.transform='';
+  el.style.backgroundColor='';
+  const cardId=el.dataset.cardId;
+  _swipe.active=false;_swipe.el=null;
+  if(Math.abs(dx)<100)return;
+  if(dx>100){
+    /* Swipe droit → déplacer */
+    if(typeof moveCard==='function')moveCard(cardId);
+  } else if(dx<-100){
+    /* Swipe gauche → supprimer */
+    if(typeof deleteCard==='function')deleteCard(cardId);
+  }
+});
 
 /* === Pull-to-refresh mobile === */
 let _ptr={startY:0,curY:0,active:false,el:null};
@@ -3173,10 +3303,12 @@ function renderAllCards(){
     list.innerHTML='<div class="empty"><div class="ic">🔍</div><h3>Aucune carte</h3></div>';
   } else if(_cardsView==='gallery'){
     list.className='cards-gallery';
-    list.innerHTML=cards.map(c=>renderGalleryCard(c)).join('');
+    if(cards.length>250)_renderVirtualScroll(list,cards,'gallery');
+    else list.innerHTML=cards.map(c=>renderGalleryCard(c)).join('');
   } else {
     list.className='';
-    list.innerHTML=cards.map(c=>renderCardRow(c,{action:'cardClick',selectable:_cardsBulkMode})).join('');
+    if(cards.length>250)_renderVirtualScroll(list,cards,'list');
+    else list.innerHTML=cards.map(c=>renderCardRow(c,{action:'cardClick',selectable:_cardsBulkMode})).join('');
   }
   _updateBulkBar();
 }
@@ -3199,6 +3331,54 @@ function _updateBulkBar(){
 function setCardsView(v){_cardsView=v;localStorage.setItem('cardvault_cardsView',v);renderAllCards()}
 function setCardsSort(s){_cardsSort=s;localStorage.setItem('cardvault_cardsSort',s);renderAllCards()}
 function toggleBulkMode(){_cardsBulkMode=!_cardsBulkMode;if(!_cardsBulkMode)_cardsSelection.clear();renderAllCards()}
+
+/* === Virtual scroll : ne rend que les cartes visibles + buffer (perf >250 cartes) === */
+let _vScroll={list:null,cards:[],mode:'list',rowH:90,gridCols:1,scrollEl:null,raf:null};
+function _renderVirtualScroll(listEl,cards,mode){
+  _vScroll.list=listEl;_vScroll.cards=cards;_vScroll.mode=mode;
+  /* Calcul hauteur estimée par carte selon le mode */
+  if(mode==='gallery'){
+    const w=listEl.clientWidth||720;
+    const minCol=window.innerWidth>=1100?220:window.innerWidth>=720?200:160;
+    _vScroll.gridCols=Math.max(1,Math.floor(w/minCol));
+    _vScroll.rowH=Math.round(minCol*7/5)+50; /* aspect 5:7 + texte sous */
+  } else {
+    _vScroll.rowH=window.innerWidth<400?72:90;
+    _vScroll.gridCols=1;
+  }
+  /* Crée un container avec hauteur totale + un sub-container positionné */
+  const totalRows=Math.ceil(cards.length/_vScroll.gridCols);
+  const totalH=totalRows*_vScroll.rowH;
+  listEl.innerHTML='<div id="vsSpacer" style="height:'+totalH+'px;position:relative"><div id="vsViewport" style="position:absolute;left:0;right:0;top:0;display:'+(mode==='gallery'?'grid':'block')+(mode==='gallery'?';grid-template-columns:repeat('+_vScroll.gridCols+',1fr);gap:'+(window.innerWidth>=1100?'18':'14')+'px':'')+'"></div></div>';
+  _vScroll.scrollEl=window;
+  _vScrollUpdate();
+  if(_vScroll.scrollHandler)window.removeEventListener('scroll',_vScroll.scrollHandler);
+  _vScroll.scrollHandler=()=>{
+    if(_vScroll.raf)return;
+    _vScroll.raf=requestAnimationFrame(()=>{_vScroll.raf=null;_vScrollUpdate()});
+  };
+  window.addEventListener('scroll',_vScroll.scrollHandler,{passive:true});
+}
+function _vScrollUpdate(){
+  if(!_vScroll.list||!_vScroll.cards.length)return;
+  const viewport=document.getElementById('vsViewport');
+  const spacer=document.getElementById('vsSpacer');
+  if(!viewport||!spacer)return;
+  const rect=spacer.getBoundingClientRect();
+  const top=Math.max(0,-rect.top);
+  const visibleRows=Math.ceil(window.innerHeight/_vScroll.rowH)+4; /* buffer 4 rows */
+  const startRow=Math.max(0,Math.floor(top/_vScroll.rowH)-2);
+  const endRow=Math.min(Math.ceil(_vScroll.cards.length/_vScroll.gridCols),startRow+visibleRows);
+  const startIdx=startRow*_vScroll.gridCols;
+  const endIdx=Math.min(_vScroll.cards.length,endRow*_vScroll.gridCols);
+  const slice=_vScroll.cards.slice(startIdx,endIdx);
+  viewport.style.top=(startRow*_vScroll.rowH)+'px';
+  if(_vScroll.mode==='gallery'){
+    viewport.innerHTML=slice.map(c=>renderGalleryCard(c)).join('');
+  } else {
+    viewport.innerHTML=slice.map(c=>renderCardRow(c,{action:'cardClick',selectable:_cardsBulkMode})).join('');
+  }
+}
 
 /* Click sur une carte : routé selon le mode (bulk → toggle, normal → ouvre détail) */
 function cardClick(id){
@@ -5467,6 +5647,24 @@ window.addEventListener('resize',()=>{
   _adaptHeaderTimer=setTimeout(_adaptHeaderToSidebar,150);
 });
 
+function _registerServiceWorker(){
+  if(!('serviceWorker' in navigator))return;
+  /* Désactivable via STATE.config.disableSW si l'utilisateur a des problèmes */
+  if(STATE.config&&STATE.config.disableSW)return;
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    /* Si nouvelle version, propose de skip waiting */
+    reg.addEventListener('updatefound',()=>{
+      const nw=reg.installing;
+      if(!nw)return;
+      nw.addEventListener('statechange',()=>{
+        if(nw.state==='installed'&&navigator.serviceWorker.controller){
+          /* Nouvelle version dispo : on prévient mais skip silencieusement */
+          nw.postMessage({type:'SKIP_WAITING'});
+        }
+      });
+    });
+  }).catch(e=>console.warn('SW register failed:',e));
+}
 function bootApp(){
   document.getElementById('launch').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -5474,6 +5672,8 @@ function bootApp(){
   updateHeader();
   _adaptHeaderToSidebar();
   _wireCardDragToCollections();
+  _initImgCache();
+  _registerServiceWorker();
   renderCollections();
   if(STATE.config.gistId){
     setSyncStatus('⏳ Pull…','pending');
