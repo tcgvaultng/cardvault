@@ -3037,6 +3037,15 @@ function addCardToDeck(deckId){
   }
   let allCards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
   if(allCards.length===0){toast('Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');return}
+  /* Compteurs initiaux (avant ouverture) pour pouvoir afficher le delta */
+  _renderDeckPicker(deck,allCards,true);
+}
+
+/* Rendu du picker, ré-utilisable pour refresh sans fermer la modal */
+function _renderDeckPicker(deck,allCards,openFresh){
+  const u=_ensureDecks();if(!u)return;
+  /* Refresh la list de cartes si pas fournie (au cas où la collection a changé) */
+  if(!allCards)allCards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
   /* Filtre Commander STRICT : 3 buckets */
   let matchedCards=allCards;
   let unknownCards=[];
@@ -3046,14 +3055,9 @@ function addCardToDeck(deckId){
     matchedCards=[];unknownCards=[];blockedCount=0;
     for(const c of allCards){
       const ci=c.colorIdentity;
-      if(!Array.isArray(ci)){
-        /* Pas de données → bucket à enrichir */
-        unknownCards.push(c);
-      } else if(_identitySubset(ci,cmdrIdentity)){
-        matchedCards.push(c);
-      } else {
-        blockedCount++; /* hors identité, pas affiché */
-      }
+      if(!Array.isArray(ci))unknownCards.push(c);
+      else if(_identitySubset(ci,cmdrIdentity))matchedCards.push(c);
+      else blockedCount++;
     }
   }
   if(matchedCards.length===0&&unknownCards.length===0){
@@ -3062,33 +3066,48 @@ function addCardToDeck(deckId){
   }
   matchedCards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
   unknownCards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  /* Compte les cartes déjà dans le deck (par cardId) */
+  const inDeckCount=new Map();
+  for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
+    inDeckCount.set(e.cardId,(inDeckCount.get(e.cardId)||0)+(e.qty||1));
+  }
   const renderPickRow=c=>{
     const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
+    const argsRm=esc(JSON.stringify([deck.id,c.id,'mainboard',-1]));
     const idBadge=deck.commander&&Array.isArray(c.colorIdentity)?' '+_identityBadge(c.colorIdentity):'';
+    const inDeck=inDeckCount.get(c.id)||0;
+    const inDeckBadge=inDeck>0?'<span class="qty-pill qty-multi" title="Dans le deck" style="background:linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2));color:#7eff9b;border-color:rgba(75,201,132,.5)">+'+inDeck+'</span>':'';
+    /* +/- buttons : '+' ajoute, '-' retire (si déjà dedans) */
+    const minusBtn=inDeck>0?'<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsRm+'" data-keep-modal="1" title="Retirer 1">−</button>':'';
     return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
       +imgTag(c.image)
-      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+'</div></div>'
-      +'<span class="qty-pill qty-multi">'+(c.quantity||1)+'</span></div>';
+      +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+(' • '+(c.quantity||1)+' dispo')+'</div></div>'
+      +inDeckBadge
+      +minusBtn
+      +'</div>';
   };
   let html='';
-  html+='<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">';
+  html+='<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px" autofocus>';
+  /* Récap des cartes ajoutées (badge dynamique) */
+  const totalInDeck=[...inDeckCount.values()].reduce((s,n)=>s+n,0);
   if(deck.commander){
     html+='<div class="muted mb-10" style="font-size:11px">👑 Identité '+_identityBadge(deck.commander.snapshot?.colorIdentity||[])
       +' du commandant <b>'+esc(deck.commander.snapshot?.name||'')+'</b><br>'
       +'✓ '+matchedCards.length+' carte(s) compatible(s)'
       +(blockedCount?' · ⊘ '+blockedCount+' hors identité (cachées)':'')
       +(unknownCards.length?' · ❓ '+unknownCards.length+' à enrichir':'')
+      +' · 📚 <b>'+totalInDeck+'</b> dans le deck'
       +'</div>';
     if(unknownCards.length>0){
       html+='<div class="enrich-prompt" style="background:rgba(255,200,120,.08);border:1px solid rgba(255,200,120,.4);border-radius:8px;padding:10px;margin-bottom:10px">'
-        +'<div style="font-size:12px;margin-bottom:6px"><b>'+unknownCards.length+' carte(s)</b> sans identité couleur connue (ajoutées avant cette feature). Elles ne sont pas filtrables tant que les données ne sont pas récupérées.</div>'
-        +'<button class="btn btn-primary btn-sm" data-act="enrichMtgCards" data-args="'+esc(JSON.stringify([deckId]))+'">⚡ Enrichir via Scryfall</button>'
+        +'<div style="font-size:12px;margin-bottom:6px"><b>'+unknownCards.length+' carte(s)</b> sans identité couleur connue.</div>'
+        +'<button class="btn btn-primary btn-sm" data-act="enrichMtgCards" data-args="'+esc(JSON.stringify([deck.id]))+'">⚡ Enrichir via Scryfall</button>'
         +'</div>';
     }
   } else {
-    html+='<div class="muted mb-10" style="font-size:11px">Click une carte pour l\'ajouter au mainboard</div>';
+    html+='<div class="muted mb-10" style="font-size:11px">Clique une carte pour ajouter +1. Bouton − pour retirer. 📚 <b>'+totalInDeck+'</b> dans le deck.</div>';
   }
-  html+='<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">';
+  html+='<div id="dk_pickList" style="max-height:55vh;overflow-y:auto">';
   if(deck.commander&&matchedCards.length){
     html+='<div class="cmd-sec-title">✓ Compatibles ('+matchedCards.length+')</div>'
       +matchedCards.map(renderPickRow).join('');
@@ -3097,21 +3116,52 @@ function addCardToDeck(deckId){
   }
   if(unknownCards.length){
     html+='<div class="cmd-sec-title">❓ Identité couleur inconnue ('+unknownCards.length+')</div>'
-      +'<div class="hint" style="font-size:11px;margin-bottom:6px">Click pour ajouter quand même (à tes risques)</div>'
+      +'<div class="hint" style="font-size:11px;margin-bottom:6px">Click pour ajouter (à tes risques)</div>'
       +unknownCards.map(renderPickRow).join('');
   }
   html+='</div>';
-  openModal('Ajouter au deck — '+deck.name,html,
-    ()=>{
-      const inp=document.getElementById('dk_search');
-      if(inp)inp.addEventListener('input',()=>{
-        const q=inp.value.toLowerCase();
-        document.querySelectorAll('#dk_pickList .card-row').forEach(r=>{
-          const t=r.textContent.toLowerCase();
-          r.style.display=(!q||t.includes(q))?'':'none';
-        });
-      });
+  /* Bouton 'Terminé' qui ferme le picker et rouvre le deck */
+  html+='<button class="btn btn-primary btn-block mt-10" data-act="finishDeckPicker" data-args="'+esc(JSON.stringify([deck.id]))+'">✓ Terminé ('+totalInDeck+' carte(s))</button>';
+  if(openFresh){
+    /* Première ouverture : openModal complet */
+    openModal('Ajouter au deck — '+deck.name,html,()=>{_wireDeckPickerSearch(deck)});
+  } else {
+    /* Refresh in-place : remplace juste le contenu de la modal */
+    const body=document.querySelector('#__modal .modal-body');
+    if(body){
+      body.innerHTML=html;
+      _wireDeckPickerSearch(deck);
+    } else {
+      openModal('Ajouter au deck — '+deck.name,html,()=>{_wireDeckPickerSearch(deck)});
+    }
+  }
+}
+
+function _wireDeckPickerSearch(deck){
+  const inp=document.getElementById('dk_search');
+  if(!inp)return;
+  /* Restaure la valeur précédente si on a refresh in-place */
+  if(window._lastDeckSearch)inp.value=window._lastDeckSearch;
+  inp.addEventListener('input',()=>{
+    window._lastDeckSearch=inp.value;
+    const q=inp.value.toLowerCase();
+    document.querySelectorAll('#dk_pickList .card-row').forEach(r=>{
+      r.style.display=(!q||r.textContent.toLowerCase().includes(q))?'':'none';
     });
+  });
+  /* Re-applique le filtre courant après refresh */
+  if(window._lastDeckSearch){
+    const q=window._lastDeckSearch.toLowerCase();
+    document.querySelectorAll('#dk_pickList .card-row').forEach(r=>{
+      r.style.display=(!q||r.textContent.toLowerCase().includes(q))?'':'none';
+    });
+  }
+}
+
+function finishDeckPicker(deckId){
+  window._lastDeckSearch='';
+  closeModal();
+  setTimeout(()=>openDeck(deckId),50);
 }
 
 /* Enrichit les cartes MTG sans colorIdentity via Scryfall (lookup par nom).
@@ -3157,11 +3207,17 @@ function _pickDeckCardAction(deckId,cardId,bd){
   deck[bd]=deck[bd]||[];
   const exist=deck[bd].find(e=>e.cardId===cardId);
   if(exist){exist.qty=(exist.qty||1)+1}
-  else deck[bd].push({cardId,qty:1,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,cmc:card.cmc,colors:card.colors,types:card.types}});
+  else deck[bd].push({cardId,qty:1,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,cmc:card.cmc,colors:card.colors,colorIdentity:card.colorIdentity,types:card.types,typeLine:card.typeLine}});
   deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  toast('+1 '+esc(card.name),'ok');
-  closeModal();
-  setTimeout(()=>openDeck(deckId),50);
+  /* Si on est dans le picker, refresh in-place (modal reste ouverte).
+     Sinon (depuis ailleurs), rouvre le deck. */
+  const inPicker=!!document.getElementById('dk_pickList');
+  if(inPicker){
+    _renderDeckPicker(deck,null,false);
+  } else {
+    closeModal();
+    setTimeout(()=>openDeck(deckId),50);
+  }
 }
 
 function adjustDeckCard(deckId,cardId,bd,delta){
@@ -3171,7 +3227,14 @@ function adjustDeckCard(deckId,cardId,bd,delta){
   e.qty=(e.qty||1)+delta;
   if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
   deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  closeModal();setTimeout(()=>openDeck(deckId),50);
+  /* Idem : refresh picker si on y est, sinon réouvre le deck */
+  const inPicker=!!document.getElementById('dk_pickList');
+  if(inPicker){
+    _renderDeckPicker(deck,null,false);
+  } else {
+    closeModal();
+    setTimeout(()=>openDeck(deckId),50);
+  }
 }
 
 function removeDeckCard(deckId,cardId,bd){
@@ -6730,7 +6793,7 @@ registerActions({
   backupExport,backupImportPrompt,
   toggleWishlist,setCardsMode,
   installPwa,
-  openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,
+  openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,finishDeckPicker,
   chooseCommander,setCommander,clearCommander,enrichMtgCards,
   setDecksSort,setDecksGameFilter,toggleDecksColor,clearDecksColors,setDecksColorMode
 });
