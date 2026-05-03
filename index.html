@@ -2798,16 +2798,18 @@ function toggleDecksColor(c){
 function setDecksColorMode(m){_decksColorMode=m;localStorage.setItem('cardvault_decksColorMode',m);renderDecks()}
 function clearDecksColors(){_decksColors.clear();localStorage.removeItem('cardvault_decksColors');renderDecks()}
 
-/* Détermine le jeu cible du filtre identité : utilise le filtre jeu actif si défini,
-   sinon défaut MTG (le filtre ne fonctionne que pour 1 jeu à la fois). */
+/* Détermine le jeu cible du filtre identité : null si 'tous jeux' ou jeu sans data.
+   Le filtre ne s'affiche que pour MTG ou Pokémon spécifiquement choisis. */
 function _identityFilterGame(){
-  if(_decksGameFilter==='all')return 'mtg';
-  return _decksGameFilter;
+  if(_decksGameFilter==='all')return null;
+  if(_decksGameFilter==='mtg'||_decksGameFilter==='pokemon')return _decksGameFilter;
+  return null;
 }
 
 function _renderDecksColorFilter(){
   const box=document.getElementById('decksColorFilter');if(!box)return;
   const game=_identityFilterGame();
+  if(!game){box.innerHTML='';return}
   const symbols=_gameIdentitySymbols(game);
   if(symbols.length===0){box.innerHTML='';return}
   const activeAny=_decksColors.size>0;
@@ -2830,6 +2832,8 @@ function _renderDecksColorFilter(){
 function _deckMatchesColorFilter(deck){
   if(_decksColors.size===0)return true;
   const targetGame=_identityFilterGame();
+  /* Pas de jeu cible = pas de filtre actif */
+  if(!targetGame)return true;
   /* Le filtre ne s'applique qu'aux decks du jeu cible */
   if(deck.game!==targetGame)return true;
   const id=new Set(_computeDeckIdentity(deck));
