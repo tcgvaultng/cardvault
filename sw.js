@@ -4,7 +4,7 @@
    - R2 images : stale-while-revalidate (sert cache, fetch en arrière-plan)
    - Manifest R2 : network-first (toujours frais si online, fallback cache)
    - Tout le reste : pass-through réseau */
-const CACHE_VERSION='cardvault-v3';
+const CACHE_VERSION='cardvault-v4';
 const APP_SHELL=[
   './',
   './index.html',

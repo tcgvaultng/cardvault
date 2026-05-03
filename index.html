@@ -7298,6 +7298,33 @@ function _registerServiceWorker(){
     });
   }).catch(e=>console.warn('SW register failed:',e));
 }
+/* Recompresse + ré-uploade les cartes manuelles dont l'image n'a pas
+   été poussée vers R2 (page fermée pendant l'upload, R2 down, etc.). */
+async function _retryPendingUploads(){
+  const u=getUser();if(!u||!u.cards)return;
+  const pending=u.cards.filter(c=>c._pendingUpload&&c._manual);
+  if(pending.length===0)return;
+  const cfg=STATE.config;
+  if(!cfg.r2Endpoint||!cfg.r2AccessKey||!cfg.r2SecretKey)return;
+  const baseUrl=cfg.r2PublicUrl||'https://pub-e6fb51260829446184146f0c3c4b999f.r2.dev';
+  for(const c of pending){
+    try{
+      if(!c.image||!c.image.startsWith('blob:'))continue;
+      const resp=await fetch(c.image);
+      if(!resp.ok)continue;
+      const blob=await resp.blob();
+      const cardId=c.setCode+'-'+c.number;
+      const key=c.game+'/'+(c.lang||'en')+'/_personal/'+cardId+'.webp';
+      await r2PutObject(key,blob,'image/webp');
+      c.image=baseUrl+'/'+key.split('/').map(encodeURIComponent).join('/');
+      delete c._pendingUpload;
+      c.updatedAt=Date.now();
+      touchActiveUser();saveLocal();scheduleSync();
+    }catch(e){console.warn('Retry upload failed for',c.id,e)}
+  }
+  renderAllCards();
+}
+
 function bootApp(){
   document.getElementById('launch').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -7307,6 +7334,7 @@ function bootApp(){
   _wireCardDragToCollections();
   _initImgCache();
   _registerServiceWorker();
+  setTimeout(_retryPendingUploads,3000);
   renderCollections();
   if(STATE.config.gistId){
     setSyncStatus('⏳ Pull…','pending');
