@@ -2671,24 +2671,77 @@ function openNewDeck(){
     });
 }
 
-/* Calcule l'identité couleur du deck : commander si Commander format,
-   sinon union des color_identity de toutes les cartes mainboard+side. */
+/* Calcule l'identité (couleur pour MTG, types pour Pokémon, etc.)
+   du deck à partir de ses cartes. */
 function _computeDeckIdentity(deck){
-  if(deck.commander&&deck.commander.snapshot?.colorIdentity)return [...deck.commander.snapshot.colorIdentity];
-  const set=new Set();
-  for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
-    const ci=e.snapshot?.colorIdentity||e.snapshot?.colors||[];
-    if(Array.isArray(ci))ci.forEach(c=>set.add(c));
+  if(deck.game==='mtg'){
+    if(deck.commander&&deck.commander.snapshot?.colorIdentity)return [...deck.commander.snapshot.colorIdentity];
+    const set=new Set();
+    for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
+      const ci=e.snapshot?.colorIdentity||e.snapshot?.colors||[];
+      if(Array.isArray(ci))ci.forEach(c=>set.add(c));
+    }
+    return [...set];
   }
-  return [...set];
+  if(deck.game==='pokemon'){
+    /* Union des types des cartes du mainboard+side */
+    const set=new Set();
+    for(const e of [...(deck.mainboard||[]),...(deck.sideboard||[])]){
+      const types=e.snapshot?.types||[];
+      if(Array.isArray(types))types.forEach(t=>set.add(t));
+    }
+    return [...set];
+  }
+  return [];
 }
-function _identityPipsHtml(colors){
-  /* Logos officiels Magic via Scryfall SVG (libres d'usage) */
-  const url=c=>'https://svgs.scryfall.io/card-symbols/'+c+'.svg';
-  if(!colors||colors.length===0)return '<img src="'+url('C')+'" alt="Incolore" title="Incolore">';
-  const order={W:1,U:2,B:3,R:4,G:5};
-  return colors.slice().sort((a,b)=>(order[a]||9)-(order[b]||9))
-    .map(c=>'<img src="'+url(c)+'" alt="'+c+'" title="'+c+'">').join('');
+/* Types Pokémon avec couleur officielle + icône */
+const POKEMON_TYPES={
+  Fire:{label:'Feu',color:'#e85a3c',icon:'🔥'},
+  Water:{label:'Eau',color:'#4faff7',icon:'💧'},
+  Grass:{label:'Plante',color:'#7ac74c',icon:'🌿'},
+  Lightning:{label:'Électrique',color:'#f4d03f',icon:'⚡'},
+  Psychic:{label:'Psy',color:'#a04dab',icon:'🔮'},
+  Fighting:{label:'Combat',color:'#c66f3a',icon:'👊'},
+  Darkness:{label:'Obscurité',color:'#2c2c2c',icon:'🌑'},
+  Metal:{label:'Métal',color:'#8a8da3',icon:'⚙️'},
+  Fairy:{label:'Fée',color:'#ec4899',icon:'🧚'},
+  Dragon:{label:'Dragon',color:'#c19433',icon:'🐉'},
+  Colorless:{label:'Incolore',color:'#bdbdbd',icon:'○'},
+};
+
+/* Symboles d'identité par jeu */
+function _gameIdentitySymbols(game){
+  if(game==='mtg')return ['W','U','B','R','G','C'];
+  if(game==='pokemon')return ['Fire','Water','Grass','Lightning','Psychic','Fighting','Darkness','Metal','Fairy','Dragon','Colorless'];
+  return [];
+}
+
+/* Render un symbole d'identité (un pip) selon le jeu */
+function _renderIdentitySymbol(game,sym,size){
+  size=size||18;
+  if(game==='mtg'){
+    return '<img src="https://svgs.scryfall.io/card-symbols/'+sym+'.svg" alt="'+sym+'" title="'+sym+'" style="width:'+size+'px;height:'+size+'px;display:inline-block">';
+  }
+  if(game==='pokemon'){
+    const t=POKEMON_TYPES[sym]||{};
+    return '<span class="pkm-type" title="'+esc(t.label||sym)+'" style="display:inline-flex;align-items:center;justify-content:center;width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(t.color||'#888')+';color:#fff;font-size:'+Math.round(size*0.55)+'px;line-height:1">'+(t.icon||(sym[0]||'?'))+'</span>';
+  }
+  return '';
+}
+
+function _identityPipsHtml(colors,game){
+  game=game||'mtg';
+  if(!colors||colors.length===0){
+    if(game==='mtg')return _renderIdentitySymbol('mtg','C',18);
+    return '';
+  }
+  const orders={
+    mtg:{W:1,U:2,B:3,R:4,G:5,C:6},
+    pokemon:{Fire:1,Water:2,Grass:3,Lightning:4,Psychic:5,Fighting:6,Darkness:7,Metal:8,Fairy:9,Dragon:10,Colorless:11},
+  };
+  const order=orders[game]||{};
+  return colors.slice().sort((a,b)=>(order[a]||99)-(order[b]||99))
+    .map(c=>_renderIdentitySymbol(game,c,18)).join('');
 }
 
 /* Filtre + tri persistés */
@@ -2697,7 +2750,12 @@ let _decksGameFilter=localStorage.getItem('cardvault_decksGameFilter')||'all';
 let _decksColors=new Set((localStorage.getItem('cardvault_decksColors')||'').split(',').filter(Boolean));
 let _decksColorMode=localStorage.getItem('cardvault_decksColorMode')||'contains'; /* contains | exact | within */
 function setDecksSort(v){_decksSort=v;localStorage.setItem('cardvault_decksSort',v);renderDecks()}
-function setDecksGameFilter(v){_decksGameFilter=v;localStorage.setItem('cardvault_decksGameFilter',v);renderDecks()}
+function setDecksGameFilter(v){
+  _decksGameFilter=v;localStorage.setItem('cardvault_decksGameFilter',v);
+  /* Reset les couleurs/types sélectionnés (différents par jeu) */
+  if(_decksColors.size>0){_decksColors.clear();localStorage.removeItem('cardvault_decksColors')}
+  renderDecks();
+}
 function toggleDecksColor(c){
   if(_decksColors.has(c))_decksColors.delete(c);
   else _decksColors.add(c);
@@ -2707,15 +2765,25 @@ function toggleDecksColor(c){
 function setDecksColorMode(m){_decksColorMode=m;localStorage.setItem('cardvault_decksColorMode',m);renderDecks()}
 function clearDecksColors(){_decksColors.clear();localStorage.removeItem('cardvault_decksColors');renderDecks()}
 
+/* Détermine le jeu cible du filtre identité : utilise le filtre jeu actif si défini,
+   sinon défaut MTG (le filtre ne fonctionne que pour 1 jeu à la fois). */
+function _identityFilterGame(){
+  if(_decksGameFilter==='all')return 'mtg';
+  return _decksGameFilter;
+}
+
 function _renderDecksColorFilter(){
   const box=document.getElementById('decksColorFilter');if(!box)return;
-  const url=c=>'https://svgs.scryfall.io/card-symbols/'+c+'.svg';
+  const game=_identityFilterGame();
+  const symbols=_gameIdentitySymbols(game);
+  if(symbols.length===0){box.innerHTML='';return}
   const activeAny=_decksColors.size>0;
+  const labels={mtg:'Identité couleur',pokemon:'Types Pokémon',onepiece:'Couleurs One Piece',yugioh:'Attributs'};
   box.innerHTML='<div class="dcf-row">'
-    +'<span class="dcf-label">Identité couleur :</span>'
-    +['W','U','B','R','G','C'].map(c=>
+    +'<span class="dcf-label">'+(labels[game]||'Identité')+' :</span>'
+    +symbols.map(c=>
       '<button class="dcf-pip'+(_decksColors.has(c)?' active':'')+'" data-act="toggleDecksColor" data-args="'+esc(JSON.stringify([c]))+'" title="'+c+'">'
-        +'<img src="'+url(c)+'" alt="'+c+'"></button>').join('')
+        +_renderIdentitySymbol(game,c,22)+'</button>').join('')
     +(activeAny?'<select class="dcf-mode" id="dcf_mode">'
       +'<option value="contains"'+(_decksColorMode==='contains'?' selected':'')+'>contient</option>'
       +'<option value="exact"'+(_decksColorMode==='exact'?' selected':'')+'>exactement</option>'
@@ -2728,7 +2796,9 @@ function _renderDecksColorFilter(){
 
 function _deckMatchesColorFilter(deck){
   if(_decksColors.size===0)return true;
-  if(deck.game!=='mtg')return true; /* le filtre couleur ne s'applique qu'à MTG */
+  const targetGame=_identityFilterGame();
+  /* Le filtre ne s'applique qu'aux decks du jeu cible */
+  if(deck.game!==targetGame)return true;
   const id=new Set(_computeDeckIdentity(deck));
   const sel=_decksColors;
   if(_decksColorMode==='exact'){
@@ -2737,7 +2807,6 @@ function _deckMatchesColorFilter(deck){
     return true;
   }
   if(_decksColorMode==='within'){
-    /* deck ⊆ selected (deck jouable avec ces couleurs) */
     for(const c of id)if(!sel.has(c))return false;
     return true;
   }
@@ -2805,8 +2874,8 @@ function renderDecks(){
         : '<div class="deck-featured deck-featured-placeholder">🎴</div>';
       const validation=validateDeck(d);
       const status=validation.rules?(validation.ok?'<span style="color:#5cd17e">✓</span>':'<span style="color:#e05a5a">⚠️ '+validation.msgs.length+'</span>'):'';
-      const identity=d.game==='mtg'?_computeDeckIdentity(d):[];
-      const identityHtml=d.game==='mtg'?'<div class="deck-identity">'+_identityPipsHtml(identity)+'</div>':'';
+      const identity=_computeDeckIdentity(d);
+      const identityHtml=identity.length||d.game==='mtg'?'<div class="deck-identity">'+_identityPipsHtml(identity,d.game)+'</div>':'';
       return '<div class="deck-card" style="--cc:'+(g.color||'#888')+'" data-act="openDeck" data-args="'+esc(JSON.stringify([d.id]))+'">'
         +featuredHtml
         +'<div class="deck-info">'
