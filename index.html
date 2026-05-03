@@ -1602,11 +1602,15 @@ async function compressImageWebp(file,maxW=500,maxH=690,quality=0.8){
 
 /* Modal pour ajouter une carte manuellement (image + metadonnees) */
 function openManualAdd(){
+  console.log('[manualAdd] start');
   const cfg=STATE.config;
   if(!cfg.r2Endpoint||!cfg.r2AccessKey||!cfg.r2SecretKey){
+    console.warn('[manualAdd] R2 non configure');
     toast('Configure d\'abord R2 dans Config','err');switchView('config');return;
   }
-  const u=getUser();if(!u)return;
+  const u=getUser();
+  if(!u){console.warn('[manualAdd] getUser=null — pas d\'utilisateur actif');toast('Aucun utilisateur actif','err');return}
+  console.log('[manualAdd] user=',STATE.activeUser,'collections=',u.collections?.length,'cards=',u.cards?.length);
   const gameOpts=Object.entries(GAMES).map(([k,g])=>'<option value="'+k+'">'+g.icon+' '+g.name+'</option>').join('');
   const editing=arguments[0]||null;
   openModal((editing?'✏️ Modifier':'📷 Ajouter')+' une carte manuelle',
@@ -1640,6 +1644,7 @@ function openManualAdd(){
         if(editing.price!=null)document.getElementById('ma_price').value=editing.price;
       }
       document.getElementById('ma_submit').addEventListener('click',async()=>{
+        console.log('[manualAdd] submit click');
         const file=document.getElementById('ma_file').files?.[0];
         const fileBack=document.getElementById('ma_file_back').files?.[0];
         const game=gameSel.value;const lang=langSel.value;
@@ -1649,8 +1654,9 @@ function openManualAdd(){
         const cardName=document.getElementById('ma_name').value.trim();
         const price=parseFloat(document.getElementById('ma_price').value);
         const status=document.getElementById('ma_status');
-        if(!game||!lang||!sc||!num||!cardName){status.textContent='⚠️ Remplis tous les champs requis';status.style.color='var(--red)';return}
-        if(!editing&&!file){status.textContent='⚠️ Image recto requise';status.style.color='var(--red)';return}
+        console.log('[manualAdd] form values:',{game,lang,sc,num,setName,cardName,hasFile:!!file,hasFileBack:!!fileBack});
+        if(!game||!lang||!sc||!num||!cardName){console.warn('[manualAdd] champs manquants');status.textContent='⚠️ Remplis tous les champs requis';status.style.color='var(--red)';return}
+        if(!editing&&!file){console.warn('[manualAdd] pas de fichier');status.textContent='⚠️ Image recto requise';status.style.color='var(--red)';return}
         try{
           status.style.color='var(--text-dim)';
           const cardId=sc+'-'+num;
@@ -1697,17 +1703,24 @@ function openManualAdd(){
               _manual:true,_pendingUpload:true,_idbImg:!!frontBlob,_idbImgBack:!!backBlob};
             newCard[idField]=cardId;
             u.cards=u.cards||[];u.cards.push(newCard);
+            console.log('[manualAdd] card pushed — u.cards.length now =',u.cards.length,'newCard=',newCard);
             savedCard=newCard;
             touchActiveUser();saveLocal();
+            console.log('[manualAdd] saveLocal done. localStorage size~',(localStorage.getItem('cardvault_state')||'').length,'chars');
             /* Reset des filtres qui pourraient masquer la nouvelle carte */
             _cardsMode='owned';_gameFilter='all';
             _advFilters={mtgColors:new Set(),mtgType:'',mtgRarity:'',mtgCmcMin:0,mtgCmcMax:99,pkmType:'',pkmRarity:'',pkmHpMin:0,pkmHpMax:999,priceMin:0,priceMax:1e9,conditionFilter:'',foilOnly:false};
             const ftxt=document.getElementById('filterCards');if(ftxt)ftxt.value='';
             const collName=u.collections.find(x=>x.id===cid)?.name||'Principale';
-            toast('Carte ajoutée à « '+collName+' » ✓','ok');
+            const totalManual=(u.cards||[]).filter(c=>c._manual).length;
+            const totalCards=(u.cards||[]).length;
+            toast('✓ Carte ajoutée à « '+collName+' » ('+totalManual+' manuelles, '+totalCards+' au total)','ok');
           }
           closeModal();renderCollections();renderAllCards();
-          if(!editing)switchView('cards');
+          /* Pour les nouveaux ajouts manuels, on ouvre direct la liste des
+             ajouts manuels — l'utilisateur voit IMMEDIATEMENT sa carte sans
+             se demander si un filtre la masque. */
+          if(!editing){switchView('cards');setTimeout(()=>openManualList(),250)}
           /* === ETAPE 4 : upload R2 en arriere-plan (best-effort) ========== */
           (async()=>{
             try{
