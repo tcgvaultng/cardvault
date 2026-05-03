@@ -313,6 +313,19 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Commander box === */
+.commander-box{background:linear-gradient(135deg,rgba(201,160,75,.1),rgba(160,102,255,.05));border:2px solid var(--gold);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px}
+.commander-box.empty{background:rgba(255,160,75,.05);border-style:dashed;border-color:var(--gold)}
+.commander-box .cmd-label{font-size:11px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:700}
+.commander-box .cmd-content{display:flex;gap:12px;align-items:center}
+.commander-box .cmd-content img{width:54px;height:76px;border-radius:6px;object-fit:cover}
+.commander-box .cmd-info{flex:1;min-width:0}
+.commander-box .cmd-name{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--gold-2)}
+.commander-box .cmd-id{font-size:13px;margin:2px 0;letter-spacing:2px}
+body.theme-retro .commander-box{background:#fff;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important}
+body.theme-retro .commander-box.empty{background:#ffeaea;border-style:solid}
+body.theme-retro .commander-box .cmd-label,body.theme-retro .commander-box .cmd-name{color:#000080;font-family:inherit!important}
+
 /* === Validation deck (règles de format) === */
 .deck-validation{padding:10px 12px;border-radius:var(--radius-sm);border:1px solid;margin-bottom:12px;font-size:12px}
 .deck-validation.ok{background:rgba(75,201,132,.06);border-color:rgba(75,201,132,.4);color:var(--text)}
@@ -2387,6 +2400,81 @@ function _isPokemonBasicEnergy(name){return /^([\w]+\s+)?(energy|énergie)\s+(de
 
 function getFormatRules(game,format){return FORMAT_RULES[game]?.[format]||null}
 
+/* === Commander : sélection du commandant + filtre par identité couleur === */
+function _isCommanderFormat(deck){return deck&&deck.game==='mtg'&&/Commander|EDH|Brawl/i.test(deck.format||'')}
+function _isLegendary(c){return /Legendary/i.test((c.typeLine||c.snapshot?.typeLine||'')||'')}
+function _canBeCommander(c){
+  /* Critère simple : créature légendaire OU planeswalker légendaire (can-be-commander).
+     On accepte aussi toutes les cartes avec type "Legendary" pour simplicité */
+  const tl=c.typeLine||c.snapshot?.typeLine||'';
+  if(!tl)return false;
+  if(!/Legendary/i.test(tl))return false;
+  return /Creature|Planeswalker/i.test(tl);
+}
+function _identitySubset(cardColors,commanderIdentity){
+  /* Retourne true si cardColors ⊆ commanderIdentity */
+  if(!Array.isArray(cardColors)||cardColors.length===0)return true; /* incolore = OK partout */
+  if(!Array.isArray(commanderIdentity))return false;
+  return cardColors.every(c=>commanderIdentity.includes(c));
+}
+function _identityBadge(colors){
+  if(!Array.isArray(colors)||colors.length===0)return '<span title="Incolore" style="color:#888;font-weight:700">◯</span>';
+  const map={W:['⚪','#fffbd5'],U:['🔵','#0e68ab'],B:['⚫','#150b00'],R:['🔴','#d3202a'],G:['🟢','#00733e']};
+  return colors.map(c=>'<span title="'+c+'">'+(map[c]?map[c][0]:c)+'</span>').join('');
+}
+
+function chooseCommander(deckId){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  /* Cartes éligibles : légendaires créature/PW MTG dans la collection */
+  const cards=(u.cards||[]).filter(c=>!c.wishlist&&c.game==='mtg'&&_canBeCommander(c));
+  if(cards.length===0){
+    toast('Aucune carte légendaire MTG dans ta collection. Ajoute-en avant de choisir un commandant.','err');
+    return;
+  }
+  cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  openModal('👑 Choisir un commandant — '+deck.name,
+    '<input id="cmdr_search" placeholder="🔍 Filtrer..." style="margin-bottom:10px">'
+    +'<div class="muted mb-10" style="font-size:11px">Click une carte légendaire pour la définir comme commandant. L\'identité couleur du deck sera limitée à celle du commandant.</div>'
+    +'<div id="cmdr_pickList" style="max-height:60vh;overflow-y:auto">'
+    +cards.map(c=>{
+      const args=esc(JSON.stringify([deck.id,c.id]));
+      const idBadge=_identityBadge(c.colorIdentity||c.colors||[]);
+      return '<div class="card-row" data-act="setCommander" data-args="'+args+'">'
+        +imgTag(c.image)
+        +'<div class="info"><div class="nm">'+esc(c.name)+' '+idBadge+'</div><div class="sub">'+esc(c.set||'')+' • '+esc(c.typeLine||'')+'</div></div></div>';
+    }).join('')
+    +'</div>',
+    ()=>{
+      const inp=document.getElementById('cmdr_search');
+      if(inp)inp.addEventListener('input',()=>{
+        const q=inp.value.toLowerCase();
+        document.querySelectorAll('#cmdr_pickList .card-row').forEach(r=>{
+          r.style.display=(!q||r.textContent.toLowerCase().includes(q))?'':'none';
+        });
+      });
+    });
+}
+
+function setCommander(deckId,cardId){
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  const card=(u.cards||[]).find(c=>c.id===cardId);if(!card)return;
+  deck.commander={cardId:card.id,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,typeLine:card.typeLine,colors:card.colors||[],colorIdentity:card.colorIdentity||card.colors||[]}};
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
+  toast('Commandant : '+esc(card.name),'ok');
+  closeModal();setTimeout(()=>openDeck(deckId),50);
+}
+
+function clearCommander(deckId){
+  if(!confirm('Retirer le commandant ? Le deck pourra à nouveau accepter des cartes de toutes couleurs.'))return;
+  const u=_ensureDecks();if(!u)return;
+  const deck=u.decks.find(d=>d.id===deckId);if(!deck)return;
+  delete deck.commander;
+  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
+  closeModal();setTimeout(()=>openDeck(deckId),50);
+}
+
 function validateDeck(deck){
   const rules=getFormatRules(deck.game,deck.format);
   if(!rules)return {ok:true,msgs:[],rules:null};
@@ -2396,6 +2484,26 @@ function validateDeck(deck){
   const sideQty=side.reduce((s,e)=>s+(e.qty||1),0);
   const msgs=[];
   let ok=true;
+  /* Commander : vérifie la color identity */
+  if(_isCommanderFormat(deck)){
+    if(!deck.commander){
+      msgs.push({type:'err',text:'Aucun commandant choisi (obligatoire pour ce format)'});
+      ok=false;
+    } else {
+      const cmdrId=deck.commander.snapshot?.colorIdentity||[];
+      const offenders=[];
+      for(const e of [...main,...side]){
+        const cardId=e.snapshot?.colorIdentity||e.snapshot?.colors||[];
+        if(!_identitySubset(cardId,cmdrId)){
+          offenders.push((e.snapshot?.name||'?')+' ('+_identityBadge(cardId)+')');
+        }
+      }
+      if(offenders.length){
+        msgs.push({type:'err',text:offenders.length+' carte(s) hors identité commandant : '+offenders.slice(0,3).join(', ')+(offenders.length>3?'…':'')});
+        ok=false;
+      }
+    }
+  }
   if(rules.mainMin&&mainQty<rules.mainMin){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — minimum '+rules.mainMin});ok=false}
   if(rules.mainMax&&mainQty>rules.mainMax){msgs.push({type:'err',text:'Mainboard : '+mainQty+' carte(s) — maximum '+rules.mainMax});ok=false}
   if(rules.sideMax!=null&&sideQty>rules.sideMax){msgs.push({type:'err',text:'Sideboard : '+sideQty+' carte(s) — maximum '+rules.sideMax});ok=false}
@@ -2545,8 +2653,34 @@ function openDeck(deckId){
       +(validation.msgs.length?'<ul class="deck-issues">'+validation.msgs.map(m=>'<li>'+esc(m.text)+'</li>').join('')+'</ul>':'')
       +'</div>';
   }
+  /* Section commandant (Commander/EDH/Brawl uniquement) */
+  let commanderHtml='';
+  if(_isCommanderFormat(deck)){
+    if(deck.commander){
+      const cmd=deck.commander.snapshot||{};
+      const idBadge=_identityBadge(cmd.colorIdentity||cmd.colors||[]);
+      const clearArgs=esc(JSON.stringify([deck.id]));
+      commanderHtml='<div class="commander-box">'
+        +'<div class="cmd-label">👑 Commandant</div>'
+        +'<div class="cmd-content">'
+        +imgTag(cmd.image)
+        +'<div class="cmd-info"><div class="cmd-name">'+esc(cmd.name||'?')+'</div>'
+        +'<div class="cmd-id">Identité : '+idBadge+'</div>'
+        +'<div class="muted" style="font-size:11px">'+esc(cmd.typeLine||'')+'</div></div>'
+        +'<button class="btn btn-ghost btn-sm" data-act="clearCommander" data-args="'+clearArgs+'">↺ Changer</button>'
+        +'</div></div>';
+    } else {
+      const chooseArgs=esc(JSON.stringify([deck.id]));
+      commanderHtml='<div class="commander-box empty">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+        +'<div><b>👑 Aucun commandant choisi</b><div class="muted" style="font-size:11px">Obligatoire pour ce format. Limite l\'identité couleur du deck.</div></div>'
+        +'<button class="btn btn-primary btn-sm" data-act="chooseCommander" data-args="'+chooseArgs+'">Choisir</button>'
+        +'</div></div>';
+    }
+  }
   openModal(deck.name+' ('+(GAMES[deck.game]?.name||deck.game)+')',
     '<div class="muted mb-10">'+(deck.format?esc(deck.format)+' · ':'')+mainQty+' main · '+sideQty+' side</div>'
+    +commanderHtml
     +validationHtml
     +'<button class="btn btn-violet btn-block mb-10" data-act="addCardToDeck" data-args="'+addArgs+'">+ Ajouter une carte depuis ma collection</button>'
     +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📚 Mainboard ('+mainQty+(validation.rules&&validation.rules.mainMin?' / '+validation.rules.mainMin:'')+')</h3>'
@@ -2562,18 +2696,39 @@ function addCardToDeck(deckId){
   const u=_ensureDecks();if(!u)return;
   const deck=u.decks.find(d=>d.id===deckId);
   if(!deck){toast('Deck introuvable','err');return}
-  const cards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
-  if(cards.length===0){toast('Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');return}
+  /* Si Commander mais pas de commander défini : forcer le choix d'abord */
+  if(_isCommanderFormat(deck)&&!deck.commander){
+    toast('Choisis d\'abord ton commandant','err');
+    chooseCommander(deckId);
+    return;
+  }
+  let cards=(u.cards||[]).filter(c=>!c.wishlist&&(deck.game==='all'||c.game===deck.game));
+  /* Filtre Commander : cartes dont l'identité couleur ⊆ celle du commandant */
+  let cmdrFiltered=false;
+  if(deck.commander){
+    const cmdrIdentity=deck.commander.snapshot?.colorIdentity||[];
+    const before=cards.length;
+    cards=cards.filter(c=>_identitySubset(c.colorIdentity||c.colors||[],cmdrIdentity));
+    cmdrFiltered=cards.length<before;
+  }
+  if(cards.length===0){
+    toast(cmdrFiltered?'Aucune carte compatible avec l\'identité du commandant':'Aucune carte du jeu '+(GAMES[deck.game]?.name||deck.game)+' dans ta collection','err');
+    return;
+  }
   cards.sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  const filterHint=deck.commander
+    ? '👑 Filtrées par identité '+(_identityBadge(deck.commander.snapshot?.colorIdentity||[]))+' du commandant <b>'+esc(deck.commander.snapshot?.name||'')+'</b>'
+    : 'Click une carte pour l\'ajouter au mainboard';
   openModal('Ajouter au deck — '+deck.name,
     '<input id="dk_search" placeholder="🔍 Filtrer par nom..." style="margin-bottom:10px">'
-    +'<div class="muted mb-10" style="font-size:11px">Click une carte pour l\'ajouter au mainboard</div>'
+    +'<div class="muted mb-10" style="font-size:11px">'+filterHint+' · '+cards.length+' carte(s) éligible(s)</div>'
     +'<div id="dk_pickList" style="max-height:60vh;overflow-y:auto">'
     +cards.map(c=>{
       const args=esc(JSON.stringify([deck.id,c.id,'mainboard']));
+      const idBadge=deck.commander?' '+_identityBadge(c.colorIdentity||c.colors||[]):'';
       return '<div class="card-row" data-act="_pickDeckCardAction" data-args="'+args+'">'
         +imgTag(c.image)
-        +'<div class="info"><div class="nm">'+esc(c.name)+'</div><div class="sub">'+esc(c.set||'')+'</div></div>'
+        +'<div class="info"><div class="nm">'+esc(c.name)+idBadge+'</div><div class="sub">'+esc(c.set||'')+(c.typeLine?' • '+esc(c.typeLine.split('—')[0].trim()):'')+'</div></div>'
         +'<span class="qty-pill qty-multi">'+(c.quantity||1)+'</span></div>';
     }).join('')
     +'</div>',
@@ -4164,8 +4319,9 @@ async function searchScryfall(q,lang,limit,opts){
         prices,
         lang:c.lang||lang,
         _mtgId:c.set+'-'+c.collector_number,
-        /* Métadonnées MTG pour filtres avancés */
-        colors:c.colors||c.color_identity||[],
+        /* Métadonnées MTG pour filtres avancés + Commander */
+        colors:c.colors||[],
+        colorIdentity:c.color_identity||c.colors||[],
         typeLine:c.type_line||c.printed_type_line||'',
         cmc:typeof c.cmc==='number'?c.cmc:null,
         rarity:c.rarity||''
@@ -6168,7 +6324,8 @@ registerActions({
   backupExport,backupImportPrompt,
   toggleWishlist,setCardsMode,
   installPwa,
-  openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck
+  openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,
+  chooseCommander,setCommander,clearCommander
 });
 
 /* ==================== WIRING ==================== */
