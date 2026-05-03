@@ -3255,8 +3255,112 @@ function _wireDeckPickerSearch(deck){
 
 function finishDeckPicker(deckId){
   window._lastDeckSearch='';
+  /* Force flush du debounced save avant de fermer */
+  if(_saveLocalDebounceTimer){clearTimeout(_saveLocalDebounceTimer);_saveLocalDebounceTimer=null;saveLocal()}
   closeModal();
   setTimeout(()=>openDeck(deckId),50);
+}
+
+/* Save debounced : évite d'écrire localStorage à chaque clic rapide.
+   Le sync push (scheduleSync) est déjà debounced de son côté. */
+let _saveLocalDebounceTimer=null;
+function saveLocalDebounced(){
+  if(_saveLocalDebounceTimer)return;
+  _saveLocalDebounceTimer=setTimeout(()=>{_saveLocalDebounceTimer=null;saveLocal()},400);
+}
+
+/* Update juste UNE row du picker + le compteur global, sans re-render complet.
+   Beaucoup plus fluide pour ajouts répétés. */
+function _updatePickerRow(deck,changedCardId){
+  const u=getUser();if(!u)return;
+  const main=deck.mainboard||[],side=deck.sideboard||[];
+  /* Update the row(s) for changedCard + others with same name (their max state may change) */
+  const changedCard=(u.cards||[]).find(c=>c.id===changedCardId);
+  const idsToUpdate=new Set([changedCardId]);
+  if(changedCard&&changedCard.name){
+    /* Cartes du picker partageant le même nom (singleton/limite par nom) */
+    document.querySelectorAll('#dk_pickList .card-row').forEach(row=>{
+      try{
+        const args=JSON.parse(row.dataset.args||'[]');
+        const otherCard=(u.cards||[]).find(c=>c.id===args[1]);
+        if(otherCard&&otherCard.name===changedCard.name)idsToUpdate.add(args[1]);
+      }catch(_){}
+    });
+  }
+  for(const cid of idsToUpdate)_renderRowInPicker(deck,cid);
+  /* Compteur global : bouton 'Terminé' + ligne info en haut */
+  const totalInDeck=[...main,...side].reduce((s,e)=>s+(e.qty||1),0);
+  const finishBtn=document.querySelector('button[data-act="finishDeckPicker"]');
+  if(finishBtn)finishBtn.textContent='✓ Terminé ('+totalInDeck+' carte(s))';
+  const headerInfo=document.querySelector('#__modal .modal-body > .muted');
+  if(headerInfo)headerInfo.innerHTML=headerInfo.innerHTML.replace(/📚 <b>\d+<\/b> dans le deck/, '📚 <b>'+totalInDeck+'</b> dans le deck');
+}
+
+/* Re-render une seule row du picker (badge, minus, MAX, classe maxed) */
+function _renderRowInPicker(deck,cardId){
+  const u=getUser();if(!u)return;
+  const card=(u.cards||[]).find(c=>c.id===cardId);if(!card)return;
+  /* Trouve la row dans le DOM */
+  let row=null;
+  document.querySelectorAll('#dk_pickList .card-row').forEach(r=>{
+    try{const args=JSON.parse(r.dataset.args||'[]');if(args[1]===cardId)row=r}catch(_){}
+  });
+  if(!row)return;
+  const main=deck.mainboard||[],side=deck.sideboard||[];
+  const inDeck=[...main,...side].filter(e=>e.cardId===cardId).reduce((s,e)=>s+(e.qty||1),0);
+  const owned=card.quantity||1;
+  const effectiveLimit=_effectiveCardLimit(deck,card);
+  const sameNameInDeck=[...main,...side].filter(e=>(e.snapshot&&e.snapshot.name)===card.name).reduce((s,e)=>s+(e.qty||1),0);
+  const maxed=inDeck>=owned||sameNameInDeck>=effectiveLimit;
+  const reason=inDeck>=owned?'collection':'format';
+  const limitDisplay=Math.min(owned,effectiveLimit);
+  /* Update class maxed */
+  row.classList.toggle('picker-maxed',maxed);
+  /* Update badge qty-pill */
+  const oldBadge=row.querySelector('.qty-pill');
+  if(inDeck>0){
+    const bgGrad=maxed?'linear-gradient(135deg,rgba(255,200,75,.35),rgba(255,160,75,.25))':'linear-gradient(135deg,rgba(120,255,180,.3),rgba(75,201,132,.2))';
+    const color=maxed?'#ffc875':'#7eff9b';
+    const borderColor=maxed?'rgba(255,200,75,.6)':'rgba(75,201,132,.5)';
+    const badgeHtml='<span class="qty-pill qty-multi" style="background:'+bgGrad+';color:'+color+';border-color:'+borderColor+'">'+inDeck+'/'+limitDisplay+'</span>';
+    if(oldBadge)oldBadge.outerHTML=badgeHtml;
+    else {
+      /* Insert avant le bouton minus s'il existe, sinon en fin de row */
+      const minusBtn=row.querySelector('button[data-act="adjustDeckCard"]');
+      const tmp=document.createElement('div');tmp.innerHTML=badgeHtml;
+      if(minusBtn)row.insertBefore(tmp.firstChild,minusBtn);
+      else row.appendChild(tmp.firstChild);
+    }
+  } else if(oldBadge){
+    oldBadge.remove();
+  }
+  /* Update bouton minus */
+  const oldMinus=row.querySelector('button[data-act="adjustDeckCard"]');
+  if(inDeck>0){
+    if(!oldMinus){
+      const argsRm=esc(JSON.stringify([deck.id,cardId,'mainboard',-1]));
+      const tmp=document.createElement('div');
+      tmp.innerHTML='<button class="btn btn-ghost btn-sm" data-act="adjustDeckCard" data-args="'+argsRm+'" title="Retirer 1">−</button>';
+      row.appendChild(tmp.firstChild);
+    }
+  } else if(oldMinus){
+    oldMinus.remove();
+  }
+  /* Update tag MAX/LIMITE dans le nom */
+  const nm=row.querySelector('.nm');
+  if(nm){
+    const oldTag=nm.querySelector('span[style*="ffc875"]');
+    if(maxed){
+      const tagHtml='<span style="background:rgba(255,200,75,.3);color:#ffc875;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px">'+(reason==='collection'?'MAX':'LIMITE')+'</span>';
+      if(oldTag)oldTag.outerHTML=tagHtml;
+      else {
+        const tmp=document.createElement('div');tmp.innerHTML=tagHtml;
+        nm.appendChild(tmp.firstChild);
+      }
+    } else if(oldTag){
+      oldTag.remove();
+    }
+  }
 }
 
 /* Enrichit les cartes MTG sans colorIdentity via Scryfall (lookup par nom).
@@ -3305,12 +3409,12 @@ function _pickDeckCardAction(deckId,cardId,bd){
   const exist=deck[bd].find(e=>e.cardId===cardId);
   if(exist){exist.qty=(exist.qty||1)+1}
   else deck[bd].push({cardId,qty:1,snapshot:{name:card.name,image:card.image,set:card.set,number:card.number,cmc:card.cmc,colors:card.colors,colorIdentity:card.colorIdentity,types:card.types,typeLine:card.typeLine}});
-  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  /* Si on est dans le picker, refresh in-place (modal reste ouverte).
+  deck.updatedAt=Date.now();touchActiveUser();saveLocalDebounced();scheduleSync();
+  /* Si on est dans le picker, update IN-PLACE de juste la row + compteurs (pas de re-render).
      Sinon (depuis ailleurs), rouvre le deck. */
   const inPicker=!!document.getElementById('dk_pickList');
   if(inPicker){
-    _renderDeckPicker(deck,null,false);
+    _updatePickerRow(deck,cardId);
   } else {
     closeModal();
     setTimeout(()=>openDeck(deckId),50);
@@ -3330,11 +3434,10 @@ function adjustDeckCard(deckId,cardId,bd,delta){
   }
   e.qty=(e.qty||1)+delta;
   if(e.qty<=0)deck[bd]=arr.filter(x=>x!==e);
-  deck.updatedAt=Date.now();touchActiveUser();saveLocal();scheduleSync();
-  /* Idem : refresh picker si on y est, sinon réouvre le deck */
+  deck.updatedAt=Date.now();touchActiveUser();saveLocalDebounced();scheduleSync();
   const inPicker=!!document.getElementById('dk_pickList');
   if(inPicker){
-    _renderDeckPicker(deck,null,false);
+    _updatePickerRow(deck,cardId);
   } else {
     closeModal();
     setTimeout(()=>openDeck(deckId),50);
