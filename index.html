@@ -313,6 +313,21 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Filtre couleur (vue Decks) === */
+.decks-color-filter{margin-bottom:10px}
+.dcf-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px}
+.dcf-label{font-size:12px;color:var(--text-dim);font-weight:600;margin-right:4px}
+.dcf-pip{width:32px;height:32px;border-radius:50%;border:2px solid var(--border);background:var(--panel);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:transform .12s,border-color .12s,filter .12s;font-family:inherit}
+.dcf-pip img{width:22px;height:22px;display:block;filter:grayscale(60%) opacity(.5)}
+.dcf-pip.active{border-color:var(--gold);transform:scale(1.08);background:rgba(201,160,75,.1)}
+.dcf-pip.active img{filter:none}
+.dcf-pip:hover{border-color:var(--gold-2)}
+.dcf-mode{flex:0 0 auto;width:auto;min-width:130px;padding:6px 10px;font-size:12px}
+body.theme-retro .decks-color-filter .dcf-row{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important}
+body.theme-retro .dcf-pip{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important}
+body.theme-retro .dcf-pip.active{border-color:#404040 #fff #fff #404040;background:#fff;transform:none}
+body.theme-retro .dcf-mode{border-radius:0!important;border:2px solid;border-color:#404040 #fff #fff #404040}
+
 /* === Decks grid (cartes un peu plus grandes que Parcourir) === */
 .decks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
 @media (min-width:1100px){.decks-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}}
@@ -978,6 +993,7 @@ body.theme-retro .card-row .nm span[style*="linear-gradient"]{background:#fff!im
           <option value="yugioh">🃎 Yu-Gi-Oh!</option>
         </select>
       </div>
+      <div id="decksColorFilter" class="decks-color-filter"></div>
       <div id="decksContent"></div>
     </section>
 
@@ -2678,8 +2694,57 @@ function _identityPipsHtml(colors){
 /* Filtre + tri persistés */
 let _decksSort=localStorage.getItem('cardvault_decksSort')||'updated-desc';
 let _decksGameFilter=localStorage.getItem('cardvault_decksGameFilter')||'all';
+let _decksColors=new Set((localStorage.getItem('cardvault_decksColors')||'').split(',').filter(Boolean));
+let _decksColorMode=localStorage.getItem('cardvault_decksColorMode')||'contains'; /* contains | exact | within */
 function setDecksSort(v){_decksSort=v;localStorage.setItem('cardvault_decksSort',v);renderDecks()}
 function setDecksGameFilter(v){_decksGameFilter=v;localStorage.setItem('cardvault_decksGameFilter',v);renderDecks()}
+function toggleDecksColor(c){
+  if(_decksColors.has(c))_decksColors.delete(c);
+  else _decksColors.add(c);
+  localStorage.setItem('cardvault_decksColors',[..._decksColors].join(','));
+  renderDecks();
+}
+function setDecksColorMode(m){_decksColorMode=m;localStorage.setItem('cardvault_decksColorMode',m);renderDecks()}
+function clearDecksColors(){_decksColors.clear();localStorage.removeItem('cardvault_decksColors');renderDecks()}
+
+function _renderDecksColorFilter(){
+  const box=document.getElementById('decksColorFilter');if(!box)return;
+  const url=c=>'https://svgs.scryfall.io/card-symbols/'+c+'.svg';
+  const activeAny=_decksColors.size>0;
+  box.innerHTML='<div class="dcf-row">'
+    +'<span class="dcf-label">Identité couleur :</span>'
+    +['W','U','B','R','G','C'].map(c=>
+      '<button class="dcf-pip'+(_decksColors.has(c)?' active':'')+'" data-act="toggleDecksColor" data-args="'+esc(JSON.stringify([c]))+'" title="'+c+'">'
+        +'<img src="'+url(c)+'" alt="'+c+'"></button>').join('')
+    +(activeAny?'<select class="dcf-mode" id="dcf_mode">'
+      +'<option value="contains"'+(_decksColorMode==='contains'?' selected':'')+'>contient</option>'
+      +'<option value="exact"'+(_decksColorMode==='exact'?' selected':'')+'>exactement</option>'
+      +'<option value="within"'+(_decksColorMode==='within'?' selected':'')+'>jouable avec</option>'
+      +'</select>'
+      +'<button class="adv-clear" data-act="clearDecksColors">↺ Effacer</button>'
+    :'')
+    +'</div>';
+}
+
+function _deckMatchesColorFilter(deck){
+  if(_decksColors.size===0)return true;
+  if(deck.game!=='mtg')return true; /* le filtre couleur ne s'applique qu'à MTG */
+  const id=new Set(_computeDeckIdentity(deck));
+  const sel=_decksColors;
+  if(_decksColorMode==='exact'){
+    if(id.size!==sel.size)return false;
+    for(const c of sel)if(!id.has(c))return false;
+    return true;
+  }
+  if(_decksColorMode==='within'){
+    /* deck ⊆ selected (deck jouable avec ces couleurs) */
+    for(const c of id)if(!sel.has(c))return false;
+    return true;
+  }
+  /* default 'contains' : selected ⊆ deck */
+  for(const c of sel)if(!id.has(c))return false;
+  return true;
+}
 
 function _sortDecks(decks,sort){
   const sizeOf=d=>(d.mainboard||[]).reduce((s,e)=>s+(e.qty||1),0);
@@ -2708,10 +2773,12 @@ function renderDecks(){
   const sortSel=document.getElementById('decksSort');if(sortSel&&sortSel.value!==_decksSort)sortSel.value=_decksSort;
   const gameSel=document.getElementById('decksGameFilter');if(gameSel&&gameSel.value!==_decksGameFilter)gameSel.value=_decksGameFilter;
   const filt=(document.getElementById('filterDecks')?.value||'').toLowerCase();
+  _renderDecksColorFilter();
   /* Filtre + tri */
   let decks=[...(u.decks||[])];
   if(_decksGameFilter!=='all')decks=decks.filter(d=>d.game===_decksGameFilter);
   if(filt)decks=decks.filter(d=>d.name.toLowerCase().includes(filt)||(d.format||'').toLowerCase().includes(filt));
+  decks=decks.filter(_deckMatchesColorFilter);
   _sortDecks(decks,_decksSort);
   if(decks.length===0){
     box.innerHTML='<div class="empty"><div class="ic">🎴</div><h3>'+(u.decks&&u.decks.length>0?'Aucun résultat':'Aucun deck')+'</h3><p class="muted">'+(u.decks&&u.decks.length>0?'Aucun deck ne correspond à tes filtres.':'Construis ton premier deck à partir de tes cartes.')+'</p>'+(u.decks&&u.decks.length===0?'<button class="btn btn-primary mt-10" data-act="openNewDeck">Créer un deck</button>':'')+'</div>';
@@ -6559,7 +6626,7 @@ registerActions({
   installPwa,
   openNewDeck,openDeck,addCardToDeck,_pickDeckCardAction,adjustDeckCard,removeDeckCard,deleteDeck,
   chooseCommander,setCommander,clearCommander,enrichMtgCards,
-  setDecksSort,setDecksGameFilter
+  setDecksSort,setDecksGameFilter,toggleDecksColor,clearDecksColors,setDecksColorMode
 });
 
 /* ==================== WIRING ==================== */
@@ -6595,6 +6662,10 @@ document.getElementById('modeWishlistBtn').addEventListener('click',()=>setCards
   if(dsEl)dsEl.addEventListener('change',e=>setDecksSort(e.target.value));
   const dgEl=document.getElementById('decksGameFilter');
   if(dgEl)dgEl.addEventListener('change',e=>setDecksGameFilter(e.target.value));
+  /* Mode select dans le filtre couleur (créé dynamiquement) */
+  document.addEventListener('change',e=>{
+    if(e.target.id==='dcf_mode')setDecksColorMode(e.target.value);
+  });
 }
 /* Filtres avancés : update _advFilters et re-render */
 let _advFiltersDebounce=null;
