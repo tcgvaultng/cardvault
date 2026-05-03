@@ -313,6 +313,31 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 .join-note{font-size:12px;color:var(--text-mute);margin-top:16px;text-align:center;max-width:340px}
 img.err-hide{visibility:hidden}
 
+/* === Stats du deck (mana curve, types, couleurs, raretés) === */
+.deck-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px}
+.stat-card-wide{grid-column:1/-1}
+.stat-card-money{background:linear-gradient(135deg,rgba(201,160,75,.12),rgba(160,102,255,.06));border-color:rgba(201,160,75,.4)}
+.stat-card .stat-title{font-size:11px;text-transform:uppercase;color:var(--text-mute);letter-spacing:.06em;margin-bottom:8px;font-weight:700;font-family:'Cinzel',serif}
+.stat-card .stat-big{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--gold-2);line-height:1.1}
+.stat-card .stat-sub{font-size:11px;color:var(--text-dim);margin-top:6px}
+.curve-row{display:flex;align-items:center;gap:8px;margin:3px 0}
+.curve-row .curve-label{font-family:'Cinzel',serif;font-weight:700;width:24px;text-align:right;font-size:13px;color:var(--gold-2)}
+.curve-row .curve-bar-wrap{flex:1;height:18px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+.curve-row .curve-bar{height:100%;background:linear-gradient(90deg,var(--violet),var(--gold));border-radius:3px;transition:width .3s}
+.curve-row .curve-val{font-size:11px;color:var(--text-dim);min-width:24px;text-align:right;font-weight:600}
+.type-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px}
+.type-row .type-label{flex:0 0 auto;min-width:80px;color:var(--text)}
+.type-row .type-bar{flex:1;height:8px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden}
+.type-row .type-bar > span{display:block;height:100%;border-radius:4px;transition:width .3s}
+.type-row .type-val{font-size:11px;color:var(--text-dim);min-width:60px;text-align:right;font-weight:600}
+body.theme-retro .stat-card{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important}
+body.theme-retro .stat-card-money{background:#fff8c0}
+body.theme-retro .stat-card .stat-title{color:#000080;font-family:inherit!important}
+body.theme-retro .stat-card .stat-big{color:#000;font-family:inherit!important}
+body.theme-retro .curve-bar{background:#000080}
+body.theme-retro .curve-bar-wrap,body.theme-retro .type-bar{background:#fff;border:1px solid #404040;border-radius:0}
+
 /* === Picker deck : carte au max === */
 .picker-maxed{opacity:.6;cursor:not-allowed;background:rgba(255,200,75,.05)}
 .picker-maxed:hover{background:rgba(255,200,75,.08)}
@@ -3100,6 +3125,7 @@ function _buildDeckModalHtml(deck){
     +((deck.mainboard||[]).length?(deck.mainboard||[]).map(e=>renderEntry(e,'mainboard')).join(''):'<div class="muted">Vide. Ajoute des cartes.</div>')
     +'<h3 style="color:var(--gold-2);margin:14px 0 8px">📋 Sideboard ('+sideQty+(validation.rules&&validation.rules.sideMax!=null?' / '+validation.rules.sideMax:'')+')</h3>'
     +((deck.sideboard||[]).length?(deck.sideboard||[]).map(e=>renderEntry(e,'sideboard')).join(''):'<div class="muted">Aucun sideboard.</div>')
+    +_renderDeckStats(deck)
     +probaSection
     +'<button class="btn btn-danger btn-block mt-10" data-act="deleteDeck" data-args="'+delArgs+'">🗑️ Supprimer ce deck</button>';
 }
@@ -3485,6 +3511,145 @@ function deleteDeck(deckId){
   u.decks=(u.decks||[]).filter(d=>d.id!==deckId);
   touchActiveUser();saveLocal();scheduleSync();closeModal();renderDecks();
   toast('Deck supprimé','ok');
+}
+
+/* === Stats deck (mana curve, types, couleurs, valeur) === */
+function _renderDeckStats(deck){
+  const u=getUser();if(!u)return '';
+  const main=deck.mainboard||[];
+  const totalQty=main.reduce((s,e)=>s+(e.qty||1),0);
+  if(totalQty===0)return '';
+
+  let html='<h3 style="color:var(--gold-2);margin:14px 0 8px">📊 Statistiques</h3>';
+  html+='<div class="deck-stats-grid">';
+
+  /* === Valeur totale du deck === */
+  let price=0,priceCount=0;
+  for(const e of main){
+    const live=(u.cards||[]).find(c=>c.id===e.cardId);
+    const p=(live&&live.price)||(e.snapshot&&e.snapshot.price)||0;
+    if(p>0){price+=p*(e.qty||1);priceCount+=(e.qty||1)}
+  }
+  if(price>0){
+    html+='<div class="stat-card stat-card-money">'
+      +'<div class="stat-title">💰 Valeur estimée</div>'
+      +'<div class="stat-big">'+fmtEur(price)+'</div>'
+      +'<div class="stat-sub">'+priceCount+' / '+totalQty+' cartes avec prix</div>'
+      +'</div>';
+  }
+
+  if(deck.game==='mtg'){
+    /* === MANA CURVE === */
+    const curve={0:0,1:0,2:0,3:0,4:0,5:0,6:0,'7+':0};
+    let totalCmc=0,countWithCmc=0;
+    for(const e of main){
+      const qty=e.qty||1;
+      const cmc=e.snapshot&&typeof e.snapshot.cmc==='number'?e.snapshot.cmc:null;
+      if(cmc===null)continue;
+      const bucket=cmc>=7?'7+':Math.floor(cmc);
+      curve[bucket]+=qty;
+      totalCmc+=cmc*qty;
+      countWithCmc+=qty;
+    }
+    const maxBar=Math.max(...Object.values(curve),1);
+    let curveHtml='';
+    for(const k of [0,1,2,3,4,5,6,'7+']){
+      const c=curve[k];
+      const pct=Math.round(c*100/maxBar);
+      curveHtml+='<div class="curve-row"><span class="curve-label">'+k+'</span><div class="curve-bar-wrap"><div class="curve-bar" style="width:'+pct+'%"></div></div><span class="curve-val">'+c+'</span></div>';
+    }
+    html+='<div class="stat-card stat-card-wide">'
+      +'<div class="stat-title">⛰ Courbe de mana</div>'
+      +curveHtml
+      +(countWithCmc>0?'<div class="stat-sub">CMC moyen <b>'+(totalCmc/countWithCmc).toFixed(2)+'</b> · '+countWithCmc+' cartes (terrains exclus si pas de CMC)</div>':'')
+      +'</div>';
+
+    /* === TYPES === */
+    const types={Creature:0,Instant:0,Sorcery:0,Enchantment:0,Artifact:0,Planeswalker:0,Land:0,Other:0};
+    const typeColors={Creature:'#7ac74c',Instant:'#4faff7',Sorcery:'#a04dab',Enchantment:'#f5c842',Artifact:'#9099a0',Planeswalker:'#ec99c8',Land:'#c66f3a',Other:'#888'};
+    for(const e of main){
+      const qty=e.qty||1;
+      const tl=((e.snapshot&&e.snapshot.typeLine)||'').toLowerCase();
+      if(tl.includes('creature'))types.Creature+=qty;
+      else if(tl.includes('planeswalker'))types.Planeswalker+=qty;
+      else if(tl.includes('instant'))types.Instant+=qty;
+      else if(tl.includes('sorcery'))types.Sorcery+=qty;
+      else if(tl.includes('enchantment'))types.Enchantment+=qty;
+      else if(tl.includes('artifact'))types.Artifact+=qty;
+      else if(tl.includes('land'))types.Land+=qty;
+      else types.Other+=qty;
+    }
+    const typeRows=Object.entries(types).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]);
+    if(typeRows.length){
+      let typeHtml='';
+      for(const [t,n] of typeRows){
+        const pct=Math.round(n*100/totalQty);
+        typeHtml+='<div class="type-row"><span class="type-label">'+t+'</span><span class="type-bar"><span style="width:'+pct+'%;background:'+typeColors[t]+'"></span></span><span class="type-val">'+n+' · '+pct+'%</span></div>';
+      }
+      html+='<div class="stat-card"><div class="stat-title">🃏 Types</div>'+typeHtml+'</div>';
+    }
+
+    /* === COULEURS === */
+    const colorCount={W:0,U:0,B:0,R:0,G:0,Colorless:0};
+    const colorBg={W:'#fffbd5',U:'#0e68ab',B:'#1a1a1a',R:'#d3202a',G:'#00733e',Colorless:'#888'};
+    for(const e of main){
+      const qty=e.qty||1;
+      const colors=(e.snapshot&&e.snapshot.colors)||[];
+      if(colors.length===0)colorCount.Colorless+=qty;
+      else for(const c of colors)if(colorCount[c]!==undefined)colorCount[c]+=qty;
+    }
+    const colorRows=Object.entries(colorCount).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]);
+    if(colorRows.length){
+      let colorHtml='';
+      for(const [c,n] of colorRows){
+        const pct=Math.round(n*100/totalQty);
+        const sym=c==='Colorless'?_renderIdentitySymbol('mtg','C',16):_renderIdentitySymbol('mtg',c,16);
+        colorHtml+='<div class="type-row">'+sym+'<span class="type-label">'+c+'</span><span class="type-bar"><span style="width:'+pct+'%;background:'+colorBg[c]+'"></span></span><span class="type-val">'+n+' · '+pct+'%</span></div>';
+      }
+      html+='<div class="stat-card"><div class="stat-title">🎨 Couleurs (cartes)</div>'+colorHtml+'</div>';
+    }
+
+    /* === Raretés === */
+    const rar={common:0,uncommon:0,rare:0,mythic:0,unknown:0};
+    const rarColors={common:'#666',uncommon:'#9bb',rare:'#caa83e',mythic:'#d24c1f',unknown:'#444'};
+    for(const e of main){
+      const qty=e.qty||1;
+      const r=(e.snapshot&&e.snapshot.rarity)||'unknown';
+      if(rar[r]!==undefined)rar[r]+=qty;else rar.unknown+=qty;
+    }
+    const rarRows=Object.entries(rar).filter(([,n])=>n>0);
+    if(rarRows.length>1){
+      let rh='';
+      for(const [r,n] of rarRows){
+        const pct=Math.round(n*100/totalQty);
+        rh+='<div class="type-row"><span class="type-label" style="text-transform:capitalize">'+r+'</span><span class="type-bar"><span style="width:'+pct+'%;background:'+rarColors[r]+'"></span></span><span class="type-val">'+n+'</span></div>';
+      }
+      html+='<div class="stat-card"><div class="stat-title">⭐ Raretés</div>'+rh+'</div>';
+    }
+  }
+
+  if(deck.game==='pokemon'){
+    /* Distribution des types Pokémon (énergies) */
+    const typeCount={};
+    for(const e of main){
+      const qty=e.qty||1;
+      const types=(e.snapshot&&e.snapshot.types)||[];
+      for(const t of types)typeCount[t]=(typeCount[t]||0)+qty;
+    }
+    const rows=Object.entries(typeCount).sort((a,b)=>b[1]-a[1]);
+    if(rows.length){
+      let rh='';
+      for(const [t,n] of rows){
+        const pct=Math.round(n*100/totalQty);
+        const sym=_renderIdentitySymbol('pokemon',t,18);
+        rh+='<div class="type-row">'+sym+'<span class="type-label">'+t+'</span><span class="type-bar"><span style="width:'+pct+'%;background:'+(POKEMON_TYPES[t]?.color||'#888')+'"></span></span><span class="type-val">'+n+' · '+pct+'%</span></div>';
+      }
+      html+='<div class="stat-card stat-card-wide"><div class="stat-title">⚡ Énergies / Types</div>'+rh+'</div>';
+    }
+  }
+
+  html+='</div>';
+  return html;
 }
 
 /* === Probabilités hypergéométriques (deck) === */
