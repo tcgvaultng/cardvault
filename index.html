@@ -405,6 +405,114 @@ body.theme-retro .tabbar button.active{background:#fff;border:1px solid #404040;
 body.theme-retro .chip{border-radius:0;background:#fff;color:#000;border:1px solid #808080}
 body.theme-retro .modal-close{border-radius:0;background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;color:#000;font-size:12px;font-weight:700;width:24px;height:24px}
 
+/* === Mode rétro : nouvelles features === */
+/* Dashboard cards */
+body.theme-retro .dashboard{gap:8px}
+body.theme-retro .dash-card{background:#d4d0c8;border-radius:0!important;border-color:#fff #404040 #404040 #fff;box-shadow:1px 1px 0 #808080}
+body.theme-retro .dash-card::before{display:none}
+body.theme-retro .dash-card .dash-label{color:#000080;font-weight:700;text-transform:none;letter-spacing:0;font-size:11px;border-bottom:1px solid #808080;padding-bottom:4px;margin-bottom:6px}
+body.theme-retro .dash-card .dash-value{color:#000;font-family:inherit!important;font-weight:700;font-size:18px}
+body.theme-retro .dash-card .dash-value.gold,body.theme-retro .dash-card .dash-value.green{color:#000080}
+body.theme-retro .dash-top-item{background:#fff;border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0;font-size:11px}
+body.theme-retro .dash-game-bar{border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0;height:14px}
+body.theme-retro .dash-game-legend{font-family:inherit!important}
+body.theme-retro .dash-game-legend i{border:1px solid #000;border-radius:0;width:10px;height:10px}
+
+/* Buy-links → boutons Windows */
+body.theme-retro .buy-links{justify-content:flex-start;gap:4px}
+body.theme-retro .buy-link{background:#d4d0c8!important;color:#000!important;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;padding:5px 10px;font-weight:400;font-size:11px}
+body.theme-retro .buy-link:hover{filter:none;background:#bdb9b1!important;transform:none}
+body.theme-retro .buy-cm{color:#000080!important}
+body.theme-retro .buy-tcg{color:#800000!important}
+body.theme-retro .buy-scry{color:#400080!important}
+
+/* Achievements → fenêtres rétro */
+body.theme-retro .achiev{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:1px 1px 0 #808080}
+body.theme-retro .achiev.unlocked{background:#fff;border-color:#000080;box-shadow:0 0 0 1px #000080}
+body.theme-retro .achiev .ach-name{color:#000;font-family:inherit!important;text-transform:none;letter-spacing:0;font-weight:700}
+body.theme-retro .achiev.unlocked .ach-name{color:#000080}
+body.theme-retro .achiev .ach-progress{background:#fff;border:1px solid #404040;border-radius:0;height:8px}
+body.theme-retro .achiev .ach-progress span{background:#000080;border-radius:0}
+
+/* Toast → boîte de dialogue Windows */
+body.theme-retro .toast{background:#d4d0c8;color:#000;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:1px 1px 0 #808080;font-family:inherit!important}
+body.theme-retro .toast-undo{background:#d4d0c8!important;color:#000!important;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;text-transform:none;letter-spacing:0;font-weight:400;padding:4px 12px}
+body.theme-retro .toast-undo:active{border-color:#404040 #fff #fff #404040}
+
+/* Skeletons → gris classique sans gradient flashy */
+body.theme-retro .skeleton{background:#bdb9b1;animation:none;border-radius:0!important}
+
+/* Cards toolbar / view toggle / mode toggle */
+body.theme-retro .cards-view-toggle,body.theme-retro .cards-mode-toggle{background:#d4d0c8;border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0;padding:1px}
+body.theme-retro .cards-view-toggle button,body.theme-retro .cards-mode-toggle button{border-radius:0;background:transparent;color:#000;border:1px solid transparent}
+body.theme-retro .cards-view-toggle button.active,body.theme-retro .cards-mode-toggle button.active{background:#fff;border:1px solid #000;color:#000080}
+body.theme-retro #bulkToggleBtn.active{background:#fff!important;color:#000080!important;border-color:#000080!important}
+
+/* Filtres avancés */
+body.theme-retro .advanced-filters{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important}
+body.theme-retro .advanced-filters summary{color:#000;font-weight:700}
+body.theme-retro .color-pick button{border-radius:0!important;border:2px solid;border-color:#fff #404040 #404040 #fff;width:28px;height:28px;font-size:12px}
+body.theme-retro .color-pick button[data-active="1"]{border-color:#404040 #fff #fff #404040}
+body.theme-retro .adv-clear{background:#d4d0c8;color:#000;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0}
+
+/* Bulk actions → barre d'état Windows */
+body.theme-retro .bulk-actions{background:#d4d0c8;border-top:2px solid;border-color:#fff transparent transparent;border-style:solid;color:#000}
+body.theme-retro .bulk-actions #bulkCount{color:#000;font-weight:400}
+body.theme-retro .bulk-actions #bulkCount b{color:#000080}
+
+/* Move modal targets → liste Windows */
+body.theme-retro .move-list{background:#fff;border:2px solid;border-color:#404040 #fff #fff #404040;padding:0;gap:0}
+body.theme-retro .move-target{background:#fff;border:none;border-bottom:1px solid #d4d0c8;border-radius:0!important;padding:6px 10px}
+body.theme-retro .move-target:hover{background:#000080;color:#fff;transform:none}
+body.theme-retro .move-target:hover .move-target-name,body.theme-retro .move-target:hover .move-target-arrow,body.theme-retro .move-target:hover .muted{color:#fff!important}
+body.theme-retro .move-target-color{border-radius:0;width:12px;height:12px;border:1px solid #404040}
+body.theme-retro .move-target-arrow{color:#000;font-weight:400}
+
+/* Theme presets → boutons Win95 */
+body.theme-retro .theme-preset{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;padding:6px}
+body.theme-retro .theme-preset:hover{transform:none;background:#bdb9b1}
+body.theme-retro .theme-preset.active{border-color:#404040 #fff #fff #404040;box-shadow:none;background:#fff}
+body.theme-retro .theme-preset .swatch{border-radius:0!important;border:1px solid #404040}
+body.theme-retro .theme-preset .nm{color:#000;font-family:inherit!important;font-weight:400}
+body.theme-retro .theme-custom input[type=color]{border:2px solid;border-color:#404040 #fff #fff #404040;border-radius:0;padding:0;background:#fff;height:24px}
+
+/* Pull-to-refresh → boîte Windows */
+body.theme-retro #__ptr{background:#d4d0c8;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0;font-family:inherit!important;color:#000}
+
+/* Hover preview → bordure 3D */
+body.theme-retro #__hoverPreview{border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;box-shadow:2px 2px 0 #808080}
+
+/* Qty pill → badge plat classique */
+body.theme-retro .card-row .qty-pill,body.theme-retro .card-row .qty-pill.qty-multi{background:#fff!important;color:#000!important;border:1px solid #404040!important;border-radius:0!important;font-family:inherit!important;font-weight:700;box-shadow:none;letter-spacing:0}
+
+/* Gallery cards → fenêtre Windows */
+body.theme-retro .gallery-card .img-wrap{border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;background:#000}
+body.theme-retro .gallery-card:hover{transform:none;box-shadow:none}
+body.theme-retro .gallery-card.selected .img-wrap{border-color:#000080;border-width:3px;box-shadow:none}
+body.theme-retro .gallery-card .qty-badge{background:#000080!important;color:#fff!important;border-radius:0!important;font-family:inherit!important;font-weight:700;box-shadow:none;letter-spacing:0;padding:3px 7px}
+body.theme-retro .gallery-card .price-badge{background:#000080!important;border-radius:0!important;font-family:inherit!important;box-shadow:none}
+body.theme-retro .gallery-card .foil-badge{background:#fff!important;color:#000!important;border:1px solid #000;border-radius:0!important;font-family:inherit!important}
+body.theme-retro .gallery-card .gc-move{background:#d4d0c8!important;color:#000!important;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;padding:3px 6px;font-size:11px}
+
+/* Drop targets / drag-over → highlight Windows */
+body.theme-retro .coll-card.drop-target{border-color:#000080!important;box-shadow:0 0 0 1px #000080;transform:none}
+body.theme-retro .coll-card.drop-target::after{background:#000080;color:#fff;font-family:inherit!important;font-size:12px;border:1px dashed #fff}
+body.theme-retro .coll-card.drag-over{border-color:#000080!important;box-shadow:0 0 0 1px #000080}
+
+/* Drag handle / row-move / row-wish */
+body.theme-retro .coll-drag-handle{background:#d4d0c8;color:#000;border-radius:0}
+body.theme-retro .card-row .row-move,body.theme-retro .card-row .row-wish{background:#d4d0c8!important;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0!important;color:#000;font-family:inherit!important}
+body.theme-retro .card-row .row-move:hover,body.theme-retro .card-row .row-wish:hover{background:#bdb9b1!important;border-color:#fff #404040 #404040 #fff!important;color:#000!important}
+body.theme-retro .card-row .row-wish.active{background:#fff!important}
+
+/* Sync indicator dans la sidebar */
+body.theme-retro .tabbar .sync-indicator.in-sidebar{background:#d4d0c8;border-color:transparent transparent #404040;border-style:solid;border-width:0 0 2px 0;font-family:inherit}
+body.theme-retro .tabbar .user-chip.in-sidebar{background:#d4d0c8;color:#000;font-family:inherit}
+body.theme-retro .tabbar .user-chip.in-sidebar .nm{color:#000}
+
+/* Foil chip dans le card-row */
+body.theme-retro .card-row .nm span[style*="linear-gradient"]{background:#fff!important;color:#000!important;border:1px solid #000!important;border-radius:0!important;font-family:inherit!important}
+
 /* === Personnalisation apparence === */
 .theme-presets{display:flex;gap:8px;flex-wrap:wrap}
 .theme-preset{cursor:pointer;border:2px solid var(--border);border-radius:10px;padding:8px;min-width:90px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .12s,border-color .12s;background:var(--surface)}
